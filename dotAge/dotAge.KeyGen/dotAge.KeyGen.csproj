@@ -7,10 +7,15 @@
     <Nullable>enable</Nullable>
     <AssemblyName>age-keygen</AssemblyName>
     <Description>.NET implementation of the age-keygen tool</Description>
+
+    <!-- Project Metadata -->
+    <Authors>Aidan Morgan</Authors>
+    <!-- Version is managed by GitVersion -->
+    <Version>$(DOT_AGE_VERSION)</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\dotAge.Core\dotAge.Core.csproj" />
+    <ProjectReference Include="..\DotAge.Core\DotAge.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

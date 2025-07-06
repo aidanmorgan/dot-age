@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace dotAge.Core.Format
+namespace DotAge.Core.Format
 {
     /// <summary>
     /// Represents the header of an age-encrypted file.
@@ -18,13 +18,13 @@ namespace dotAge.Core.Format
         public List<Stanza> Stanzas { get; } = new List<Stanza>();
 
         // The MAC (Message Authentication Code) of the header
-        public byte[] Mac { get; set; }
+        public byte[]? Mac { get; set; }
 
         /// <summary>
         /// Creates a new header with the specified recipient stanzas.
         /// </summary>
         /// <param name="stanzas">The recipient stanzas.</param>
-        public Header(IEnumerable<Stanza> stanzas = null)
+        public Header(IEnumerable<Stanza>? stanzas = null)
         {
             if (stanzas != null)
             {

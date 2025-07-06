@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using dotAge.Core.Format;
+using DotAge.Core.Format;
 using Xunit;
 
-namespace dotAge.Tests.Format
+namespace DotAge.Tests.Format
 {
     public class StanzaTests
     {

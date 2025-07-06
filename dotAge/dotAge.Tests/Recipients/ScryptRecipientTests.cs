@@ -1,12 +1,12 @@
 using System;
 using System.Text;
 using System.Threading.Tasks;
-using dotAge.Core.Crypto;
-using dotAge.Core.Format;
-using dotAge.Core.Recipients;
+using DotAge.Core.Crypto;
+using DotAge.Core.Format;
+using DotAge.Core.Recipients;
 using Xunit;
 
-namespace dotAge.Tests.Recipients
+namespace DotAge.Tests.Recipients
 {
     public class ScryptRecipientTests
     {
@@ -93,8 +93,8 @@ namespace dotAge.Tests.Recipients
             // Assert
             Assert.NotNull(stanza);
             Assert.Equal("scrypt", stanza.Type);
-            Assert.Equal(1, stanza.Arguments.Count);
-            Assert.Equal(1, stanza.Body.Count);
+            Assert.Single(stanza.Arguments);
+            Assert.Single(stanza.Body);
         }
 
         [Fact]
@@ -192,8 +192,8 @@ namespace dotAge.Tests.Recipients
             // Assert
             Assert.NotNull(stanza);
             Assert.Equal("scrypt", stanza.Type);
-            Assert.Equal(1, stanza.Arguments.Count);
-            Assert.Equal(1, stanza.Body.Count);
+            Assert.Single(stanza.Arguments);
+            Assert.Single(stanza.Body);
         }
 
         [Fact]

@@ -4,10 +4,37 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- NuGet Package Properties -->
+    <PackageId>DotAge</PackageId>
+    <!-- Version is managed by GitVersion -->
+    <Version>$(DOT_AGE_VERSION)</Version>
+    <Authors>Aidan Morgan</Authors>
+    <Company>DotAge</Company>
+    <Description>.NET implementation of the age encryption system, featuring X25519 key generation, ChaCha20-Poly1305 encryption/decryption, and Scrypt key derivation.</Description>
+    <PackageTags>encryption;age;cryptography;security;x25519;chacha20poly1305;scrypt</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/aidan-/dot-age</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/aidan-/dot-age</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright © $([System.DateTime]::Now.Year) DotAge Contributors</Copyright>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Deterministic>true</Deterministic>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Curve25519.NetCore" Version="1.0.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
 </Project>

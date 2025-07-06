@@ -1,10 +1,10 @@
 using System;
 using System.Text;
-using dotAge.Core.Crypto;
-using dotAge.Core.Format;
+using DotAge.Core.Crypto;
+using DotAge.Core.Format;
 using Xunit;
 
-namespace dotAge.Tests.Format
+namespace DotAge.Tests.Format
 {
     public class PayloadTests
     {

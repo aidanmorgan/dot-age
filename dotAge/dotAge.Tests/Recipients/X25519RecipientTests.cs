@@ -1,12 +1,12 @@
 using System;
 using System.Text;
 using System.Threading.Tasks;
-using dotAge.Core.Crypto;
-using dotAge.Core.Format;
-using dotAge.Core.Recipients;
+using DotAge.Core.Crypto;
+using DotAge.Core.Format;
+using DotAge.Core.Recipients;
 using Xunit;
 
-namespace dotAge.Tests.Recipients
+namespace DotAge.Tests.Recipients
 {
     public class X25519RecipientTests
     {
@@ -43,7 +43,7 @@ namespace dotAge.Tests.Recipients
             byte[] publicKey = null;
 
             // Act & Assert
-            Assert.Throws<ArgumentException>(() => new X25519Recipient(publicKey));
+            Assert.Throws<ArgumentNullException>(() => new X25519Recipient(publicKey));
         }
 
         [Fact]
@@ -64,7 +64,7 @@ namespace dotAge.Tests.Recipients
             byte[] privateKey = null;
 
             // Act & Assert
-            Assert.Throws<ArgumentException>(() => new X25519Recipient(publicKey, privateKey));
+            Assert.Throws<ArgumentNullException>(() => new X25519Recipient(publicKey, privateKey));
         }
 
         [Fact]
@@ -107,8 +107,8 @@ namespace dotAge.Tests.Recipients
             // Assert
             Assert.NotNull(stanza);
             Assert.Equal("X25519", stanza.Type);
-            Assert.Equal(1, stanza.Arguments.Count);
-            Assert.Equal(1, stanza.Body.Count);
+            Assert.Single(stanza.Arguments);
+            Assert.Single(stanza.Body);
         }
 
         [Fact]
@@ -120,7 +120,7 @@ namespace dotAge.Tests.Recipients
             byte[] fileKey = null;
 
             // Act & Assert
-            Assert.Throws<ArgumentException>(() => recipient.CreateStanza(fileKey));
+            Assert.Throws<ArgumentNullException>(() => recipient.CreateStanza(fileKey));
         }
 
         [Fact]
@@ -204,8 +204,8 @@ namespace dotAge.Tests.Recipients
             // Assert
             Assert.NotNull(stanza);
             Assert.Equal("X25519", stanza.Type);
-            Assert.Equal(1, stanza.Arguments.Count);
-            Assert.Equal(1, stanza.Body.Count);
+            Assert.Single(stanza.Arguments);
+            Assert.Single(stanza.Body);
         }
 
         [Fact]
@@ -217,7 +217,7 @@ namespace dotAge.Tests.Recipients
             byte[] fileKey = null;
 
             // Act & Assert
-            await Assert.ThrowsAsync<ArgumentException>(async () => await recipient.CreateStanzaAsync(fileKey));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await recipient.CreateStanzaAsync(fileKey));
         }
 
         [Fact]

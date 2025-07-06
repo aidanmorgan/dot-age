@@ -3,8 +3,13 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <Nullable>disable</Nullable>
     <IsPackable>false</IsPackable>
+
+    <!-- Project Metadata -->
+    <Authors>Aidan Morgan</Authors>
+    <!-- Version is managed by GitVersion -->
+    <Version>$(DOT_AGE_VERSION)</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\dotAge.Core\dotAge.Core.csproj" />
+    <ProjectReference Include="..\DotAge.Core\DotAge.Core.csproj" />
+    <ProjectReference Include="..\DotAge.KeyGen\DotAge.KeyGen.csproj" />
   </ItemGroup>
 
 </Project>

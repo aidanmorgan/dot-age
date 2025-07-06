@@ -1,11 +1,11 @@
 using System;
 using System.IO;
-using dotAge.Core;
-using dotAge.Core.Crypto;
-using dotAge.Core.Recipients;
+using DotAge.Core;
+using DotAge.Core.Crypto;
+using DotAge.Core.Recipients;
 using Xunit;
 
-namespace dotAge.Tests.Integration
+namespace DotAge.Tests.Integration
 {
     public class DotAgeKeyIntegrationTests
     {
@@ -24,7 +24,7 @@ namespace dotAge.Tests.Integration
             // Arrange, Act, Assert
             builder
                 .WithDotAgeGeneratedKeys()
-                .WithTextContent("Hello, World! This is a test using dotAge-generated keys.")
+                .WithTextContent("Hello, World! This is a test using DotAge-generated keys.")
                 .GenerateKeys()
                 .EncryptWithAge()
                 .DecryptWithAge()
@@ -45,7 +45,7 @@ namespace dotAge.Tests.Integration
             // Arrange, Act, Assert
             builder
                 .WithDotAgeGeneratedKeys()
-                .WithTextContent("Hello, World! This is a test using dotAge-generated keys.")
+                .WithTextContent("Hello, World! This is a test using DotAge-generated keys.")
                 .GenerateKeys()
                 .ConfigureEncryption()
                 .EncryptWithDotAge()
@@ -67,7 +67,7 @@ namespace dotAge.Tests.Integration
             // Arrange, Act, Assert
             builder
                 .WithDotAgeGeneratedKeys()
-                .WithTextContent("Hello, World! This is a test using dotAge-generated keys.")
+                .WithTextContent("Hello, World! This is a test using DotAge-generated keys.")
                 .GenerateKeys()
                 .ConfigureDecryption()
                 .EncryptWithAge()
@@ -83,7 +83,7 @@ namespace dotAge.Tests.Integration
             // Arrange, Act, Assert
             builder
                 .WithDotAgeGeneratedKeys()
-                .WithTextContent("Hello, World! This is a test using dotAge-generated keys.")
+                .WithTextContent("Hello, World! This is a test using DotAge-generated keys.")
                 .GenerateKeys()
                 .ConfigureEncryption()
                 .ConfigureDecryption()

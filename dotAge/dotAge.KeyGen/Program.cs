@@ -4,30 +4,32 @@ using System.CommandLine;
 
 using System.CommandLine.Invocation;
 using System.Globalization;
-using dotAge.Core.Crypto;
+using DotAge.Core.Crypto;
 
-namespace dotAge.KeyGen
+namespace DotAge.KeyGen
 {
-    class Program
+    public class Program
     {
         private static readonly string DotAgeVersion = "0.0.1-alpha";
 
         static int Main(string[] args)
         {
+            var outputOption = new Option<string>(
+                new[] { "-o", "--output" },
+                "Write the key pair to the specified file instead of standard output"
+            );
+
             var rootCommand = new RootCommand("Generate a new age key pair")
             {
-                new Option<string>(
-                    new[] { "-o", "--output" },
-                    "Write the key pair to the specified file instead of standard output"
-                ),
+                outputOption
             };
 
-            rootCommand.Handler = CommandHandler.Create(GenerateKeyPair);
+            rootCommand.SetHandler((string output) => GenerateKeyPair(output), outputOption);
 
             return rootCommand.Invoke(args);
         }
 
-        private static int GenerateKeyPair(string output)
+        public static int GenerateKeyPair(string output)
         {
             try
             {
@@ -39,7 +41,7 @@ namespace dotAge.KeyGen
                 var encodedPublicKey = X25519.EncodePublicKey(publicKey);
 
                 // Format the output
-                var keyOutput = $"{encodedPrivateKey}\n# public key: {encodedPublicKey}\n# created {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)} by dotAge {DotAgeVersion}";
+                var keyOutput = $"{encodedPrivateKey}\n# public key: {encodedPublicKey}\n# created: {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)} by DotAge {DotAgeVersion}";
 
                 // Write the output
                 if (string.IsNullOrEmpty(output))

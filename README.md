@@ -1,6 +1,8 @@
-# dotAge - .NET Implementation of the age Encryption System
+# DotAge - .NET Implementation of the age Encryption System
 
-This is a .NET implementation of the [age encryption system](https://age-encryption.org/), based on the following implementations:
+This is a .NET implementation of the [age encryption system](https://age-encryption.org/), based on the following
+implementations:
+
 - Go: [FiloSottile/age](https://github.com/FiloSottile/age/tree/v1.2.1)
 - Java: [exceptionfactory/jagged](https://github.com/exceptionfactory/jagged)
 - Dart: [Producement/dage](https://github.com/Producement/dage)
@@ -8,6 +10,7 @@ This is a .NET implementation of the [age encryption system](https://age-encrypt
 ## Overview of age Encryption
 
 Age is a simple, modern, and secure file encryption tool and format. It features:
+
 - Small, well-defined API
 - X25519 for key agreement
 - ChaCha20-Poly1305 for encryption
@@ -16,12 +19,14 @@ Age is a simple, modern, and secure file encryption tool and format. It features
 
 ## Project Structure
 
-- `dotAge.Core`: The core library implementing the age encryption system
-- `dotAge.Tests`: Tests for the core library
+- `DotAge.Core`: The core library implementing the age encryption system
+- `DotAge.Tests`: Tests for the core library
 
 ## Testing
 
-The integration tests in `dotAge.Tests` validate the dotAge implementation against the reference [FiloSottile/age](https://github.com/FiloSottile/age) Golang implementation. To run these tests, you need to have the FiloSottile/age implementation installed on your system.
+The integration tests in `DotAge.Tests` validate the DotAge implementation against the
+reference [FiloSottile/age](https://github.com/FiloSottile/age) Golang implementation. To run these tests, you need to
+have the FiloSottile/age implementation installed on your system.
 
 ## Features
 
@@ -99,42 +104,6 @@ age.AddIdentity(identity);
 
 // Decrypt a file
 age.DecryptFile("ciphertext.age", "plaintext.txt");
-```
-
-### Using Streams for Efficient Handling of Large Files
-
-```csharp
-// Create an Age instance
-var age = new Age();
-
-// Add a recipient
-var recipient = new X25519Recipient(publicKey);
-age.AddRecipient(recipient);
-
-// Encrypt using streams
-using (var inputStream = new FileStream("plaintext.txt", FileMode.Open, FileAccess.Read))
-using (var outputStream = new FileStream("ciphertext.age", FileMode.Create, FileAccess.Write))
-{
-    age.EncryptStream(inputStream, outputStream);
-}
-
-// Or use the convenience methods for files
-age.EncryptFileWithStreams("plaintext.txt", "ciphertext.age");
-
-// For decryption
-var decryptAge = new Age();
-var identity = new X25519Recipient(publicKey, privateKey);
-decryptAge.AddIdentity(identity);
-
-// Decrypt using streams
-using (var inputStream = new FileStream("ciphertext.age", FileMode.Open, FileAccess.Read))
-using (var outputStream = new FileStream("plaintext.txt", FileMode.Create, FileAccess.Write))
-{
-    decryptAge.DecryptStream(inputStream, outputStream);
-}
-
-// Or use the convenience methods for files
-decryptAge.DecryptFileWithStreams("ciphertext.age", "plaintext.txt");
 ```
 
 ## Known Limitations

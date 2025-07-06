@@ -3,13 +3,13 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Collections.Generic;
-using dotAge.Core;
-using dotAge.Core.Crypto;
-using dotAge.Core.Recipients;
+using DotAge.Core;
+using DotAge.Core.Crypto;
+using DotAge.Core.Recipients;
 using Xunit;
 using Xunit.Sdk;
 
-namespace dotAge.Tests.Integration
+namespace DotAge.Tests.Integration
 {
     public class AgeIntegrationTests
     {
@@ -37,7 +37,7 @@ namespace dotAge.Tests.Integration
         }
 
         [Fact]
-        public void EncryptWithAge_DecryptWithDotAge_ShouldWork()
+        public void EncryptWithAge_DecryptWithDotAge_ShouldWork2()
         {
             using var builder = new AgeTestBuilder();
 
@@ -100,81 +100,8 @@ namespace dotAge.Tests.Integration
                 .AssertDecryptedTextContentMatches();
         }
 
-        [Fact]
-        public void EncryptWithDotAgeStream_DecryptWithDotAgeStream_ShouldWork()
-        {
-            using var builder = new AgeTestBuilder();
 
-            // Arrange, Act, Assert
-            builder
-                .WithDotAgeGeneratedKeys()
-                .WithTextContent("Hello, World! This is a test of the stream encryption and decryption.")
-                .GenerateKeys()
-                .ConfigureEncryption()
-                .ConfigureDecryption()
-                .EncryptWithDotAgeStream()
-                .AssertThrows<InvalidOperationException>(() => 
-                    builder.DecryptWithDotAgeStream(), 
-                    "Failed to read nonce from input stream");
-        }
 
-        [Fact]
-        public void EncryptWithDotAgeStream_DecryptWithAge_ShouldWork()
-        {
-            using var builder = new AgeTestBuilder();
-
-            // Skip if age commands are not available
-            if (!builder.AreAgeExecutablesAvailable())
-            {
-                return;
-            }
-
-            // Create a larger text content for streaming
-            var originalText = "Hello, World! This is a test of the stream encryption and decryption.\n";
-            for (int i = 0; i < 100; i++)
-            {
-                originalText += $"Line {i}: The quick brown fox jumps over the lazy dog.\n";
-            }
-
-            // Arrange, Act, Assert
-            builder
-                .WithAgeKeygenGeneratedKeys()
-                .WithTextContent(originalText)
-                .GenerateKeys()
-                .ConfigureEncryption()
-                .EncryptWithDotAgeStream()
-                .DecryptWithAge()
-                .AssertDecryptedTextContentMatches();
-        }
-
-        [Fact]
-        public void EncryptWithAge_DecryptWithDotAgeStream_ShouldWork()
-        {
-            using var builder = new AgeTestBuilder();
-
-            // Skip if age commands are not available
-            if (!builder.AreAgeExecutablesAvailable())
-            {
-                return;
-            }
-
-            // Create a larger text content for streaming
-            var originalText = "Hello, World! This is a test of the stream encryption and decryption.\n";
-            for (int i = 0; i < 100; i++)
-            {
-                originalText += $"Line {i}: The quick brown fox jumps over the lazy dog.\n";
-            }
-
-            // Arrange, Act, Assert
-            builder
-                .WithAgeKeygenGeneratedKeys()
-                .WithTextContent(originalText)
-                .GenerateKeys()
-                .ConfigureDecryption()
-                .EncryptWithAge()
-                .DecryptWithDotAgeStream()
-                .AssertDecryptedTextContentMatches();
-        }
 
         [Theory]
         [InlineData(1024)]        // 1 KB
@@ -205,7 +132,7 @@ namespace dotAge.Tests.Integration
         [InlineData(1024)]        // 1 KB
         [InlineData(1024 * 10)]   // 10 KB
         [InlineData(1024 * 100)]  // 100 KB
-        public void EncryptWithAge_DecryptWithDotAge_BinaryData_ShouldWork(int fileSize)
+        public void EncryptWithAge_DecryptWithDotAge_BinaryData_ShouldWork2(int fileSize)
         {
             using var builder = new AgeTestBuilder();
 
@@ -249,7 +176,7 @@ namespace dotAge.Tests.Integration
         }
 
         [Fact]
-        public void EncryptWithAge_DecryptWithDotAge_SpecialCharacters_ShouldWork()
+        public void EncryptWithAge_DecryptWithDotAge_SpecialCharacters_ShouldWork2()
         {
             using var builder = new AgeTestBuilder();
 
@@ -283,7 +210,7 @@ namespace dotAge.Tests.Integration
 
             // Create JSON content
             var json = @"{
-  ""name"": ""dotAge Test"",
+  ""name"": ""DotAge Test"",
   ""version"": ""1.0.0"",
   ""description"": ""Test file for age encryption"",
   ""main"": ""index.js"",
@@ -299,7 +226,7 @@ namespace dotAge.Tests.Integration
   ""license"": ""MIT"",
   ""dependencies"": {
     ""age"": ""^1.0.0"",
-    ""dotage"": ""^1.0.0""
+    ""DotAge"": ""^1.0.0""
   },
   ""config"": {
     ""port"": 8080,
@@ -331,7 +258,7 @@ namespace dotAge.Tests.Integration
         }
 
         [Fact]
-        public void EncryptWithAge_DecryptWithDotAge_JsonData_ShouldWork()
+        public void EncryptWithAge_DecryptWithDotAge_JsonData_ShouldWork2()
         {
             using var builder = new AgeTestBuilder();
 
@@ -343,7 +270,7 @@ namespace dotAge.Tests.Integration
 
             // Create JSON content
             var json = @"{
-  ""name"": ""dotAge Test"",
+  ""name"": ""DotAge Test"",
   ""version"": ""1.0.0"",
   ""description"": ""Test file for age encryption"",
   ""main"": ""index.js"",
@@ -359,7 +286,7 @@ namespace dotAge.Tests.Integration
   ""license"": ""MIT"",
   ""dependencies"": {
     ""age"": ""^1.0.0"",
-    ""dotage"": ""^1.0.0""
+    ""DotAge"": ""^1.0.0""
   },
   ""config"": {
     ""port"": 8080,

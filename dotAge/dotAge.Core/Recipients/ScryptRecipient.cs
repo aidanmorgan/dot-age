@@ -3,10 +3,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using dotAge.Core.Crypto;
-using dotAge.Core.Format;
+using DotAge.Core.Crypto;
+using DotAge.Core.Format;
 
-namespace dotAge.Core.Recipients
+namespace DotAge.Core.Recipients
 {
     /// <summary>
     /// Represents a scrypt recipient in the age encryption system.
@@ -20,7 +20,7 @@ namespace dotAge.Core.Recipients
         private readonly string _passphrase;
 
         // The salt of the recipient (for unwrapping)
-        private readonly byte[] _salt;
+        private readonly byte[]? _salt;
 
         /// <summary>
         /// Validates a file key.
@@ -29,8 +29,8 @@ namespace dotAge.Core.Recipients
         /// <exception cref="ArgumentException">Thrown when the file key is invalid.</exception>
         private static void ValidateFileKey(byte[] fileKey)
         {
-            if (fileKey == null || fileKey.Length != dotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
-                throw new ArgumentException($"File key must be {dotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(fileKey));
+            if (fileKey == null || fileKey.Length != DotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
+                throw new ArgumentException($"File key must be {DotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(fileKey));
         }
 
         /// <summary>
@@ -100,8 +100,8 @@ namespace dotAge.Core.Recipients
             var wrappingKey = Scrypt.DeriveKey(_passphrase, salt);
 
             // Encrypt the file key with the wrapping key
-            var nonce = new byte[dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-            var wrappedKey = dotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
+            var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
+            var wrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
 
             // Create the stanza
             var stanza = new Stanza(Type);
@@ -128,8 +128,8 @@ namespace dotAge.Core.Recipients
             var wrappingKey = await Scrypt.DeriveKeyAsync(_passphrase, salt, cancellationToken: cancellationToken);
 
             // Encrypt the file key with the wrapping key
-            var nonce = new byte[dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-            var wrappedKey = dotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
+            var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
+            var wrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
 
             // Create the stanza
             var stanza = new Stanza(Type);
@@ -144,7 +144,7 @@ namespace dotAge.Core.Recipients
         /// </summary>
         /// <param name="stanza">The stanza containing the wrapped file key.</param>
         /// <returns>The unwrapped file key, or null if the recipient cannot unwrap the file key.</returns>
-        public byte[] UnwrapKey(Stanza stanza)
+        public byte[]? UnwrapKey(Stanza stanza)
         {
             ValidateStanza(stanza);
 
@@ -158,8 +158,8 @@ namespace dotAge.Core.Recipients
             // Decrypt the wrapped key
             try
             {
-                var nonce = new byte[dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-                return dotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
+                var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
+                return DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
             }
             catch (CryptographicException)
             {
@@ -174,7 +174,7 @@ namespace dotAge.Core.Recipients
         /// <param name="stanza">The stanza containing the wrapped file key.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>A task that represents the asynchronous operation. The task result contains the unwrapped file key, or null if the recipient cannot unwrap the file key.</returns>
-        public async Task<byte[]> UnwrapKeyAsync(Stanza stanza, CancellationToken cancellationToken = default)
+        public async Task<byte[]?> UnwrapKeyAsync(Stanza stanza, CancellationToken cancellationToken = default)
         {
             ValidateStanza(stanza);
 
@@ -188,8 +188,8 @@ namespace dotAge.Core.Recipients
             // Decrypt the wrapped key
             try
             {
-                var nonce = new byte[dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-                return dotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
+                var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
+                return DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
             }
             catch (CryptographicException)
             {

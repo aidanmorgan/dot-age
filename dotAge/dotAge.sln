@@ -3,11 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dotAge.Core", "dotAge.Core\dotAge.Core.csproj", "{DFEF294E-E8DB-4541-B7AF-43EFA0BBC044}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotAge.Core", "DotAge.Core\DotAge.Core.csproj", "{DFEF294E-E8DB-4541-B7AF-43EFA0BBC044}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dotAge.Tests", "dotAge.Tests\dotAge.Tests.csproj", "{53B6F009-1BC1-4DE8-93FC-B664BF7AB59B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotAge.Tests", "DotAge.Tests\DotAge.Tests.csproj", "{53B6F009-1BC1-4DE8-93FC-B664BF7AB59B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dotAge.KeyGen", "dotAge.KeyGen\dotAge.KeyGen.csproj", "{A8B6F009-1BC1-4DE8-93FC-B664BF7AB59C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotAge.KeyGen", "DotAge.KeyGen\DotAge.KeyGen.csproj", "{A8B6F009-1BC1-4DE8-93FC-B664BF7AB59C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -1,11 +1,11 @@
 using System;
 using System.IO;
-using dotAge.Core;
-using dotAge.Core.Crypto;
-using dotAge.Core.Recipients;
+using DotAge.Core;
+using DotAge.Core.Crypto;
+using DotAge.Core.Recipients;
 using Xunit;
 
-namespace dotAge.Tests.Integration
+namespace DotAge.Tests.Integration
 {
     public class AgeKeygenIntegrationTests
     {

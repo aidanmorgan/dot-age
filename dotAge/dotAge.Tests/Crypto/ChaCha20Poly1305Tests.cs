@@ -1,9 +1,9 @@
 using System;
 using System.Text;
-using dotAge.Core.Crypto;
+using DotAge.Core.Crypto;
 using Xunit;
 
-namespace dotAge.Tests.Crypto
+namespace DotAge.Tests.Crypto
 {
     public class ChaCha20Poly1305Tests
     {

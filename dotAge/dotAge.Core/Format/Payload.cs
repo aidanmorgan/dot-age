@@ -2,9 +2,9 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using dotAge.Core.Crypto;
+using DotAge.Core.Crypto;
 
-namespace dotAge.Core.Format
+namespace DotAge.Core.Format
 {
     /// <summary>
     /// Represents the payload of an age-encrypted file.
@@ -24,8 +24,8 @@ namespace dotAge.Core.Format
         /// <param name="data">The encrypted data.</param>
         public Payload(byte[] key, byte[] data)
         {
-            if (key == null || key.Length != dotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
-                throw new ArgumentException($"Key must be {dotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
+            if (key == null || key.Length != DotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
+                throw new ArgumentException($"Key must be {DotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
 
             _key = key;
             _data = data ?? throw new ArgumentNullException(nameof(data));
@@ -39,17 +39,17 @@ namespace dotAge.Core.Format
         /// <returns>A new payload containing the encrypted data.</returns>
         public static Payload Encrypt(byte[] key, byte[] plaintext)
         {
-            if (key == null || key.Length != dotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
-                throw new ArgumentException($"Key must be {dotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
+            if (key == null || key.Length != DotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
+                throw new ArgumentException($"Key must be {DotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
 
             if (plaintext == null)
                 throw new ArgumentNullException(nameof(plaintext));
 
             // Generate a random nonce
-            var nonce = dotAge.Core.Crypto.ChaCha20Poly1305.GenerateNonce();
+            var nonce = DotAge.Core.Crypto.ChaCha20Poly1305.GenerateNonce();
 
             // Encrypt the plaintext
-            var ciphertext = dotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(key, nonce, plaintext);
+            var ciphertext = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(key, nonce, plaintext);
 
             // Combine the nonce and ciphertext
             var data = new byte[nonce.Length + ciphertext.Length];
@@ -59,72 +59,6 @@ namespace dotAge.Core.Format
             return new Payload(key, data);
         }
 
-        /// <summary>
-        /// Encrypts data from an input stream to an output stream using the payload key.
-        /// </summary>
-        /// <param name="key">The ChaCha20-Poly1305 key.</param>
-        /// <param name="inputStream">The input stream containing plaintext to encrypt.</param>
-        /// <param name="outputStream">The output stream to write the encrypted data to.</param>
-        public static void EncryptStream(byte[] key, Stream inputStream, Stream outputStream)
-        {
-            if (key == null || key.Length != dotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
-                throw new ArgumentException($"Key must be {dotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
-
-            if (inputStream == null)
-                throw new ArgumentNullException(nameof(inputStream));
-
-            if (outputStream == null)
-                throw new ArgumentNullException(nameof(outputStream));
-
-            if (!inputStream.CanRead)
-                throw new ArgumentException("Input stream must be readable", nameof(inputStream));
-
-            if (!outputStream.CanWrite)
-                throw new ArgumentException("Output stream must be writable", nameof(outputStream));
-
-            // Generate a random nonce base
-            var nonceBase = dotAge.Core.Crypto.ChaCha20Poly1305.GenerateNonce();
-
-            // Write the nonce base to the output stream
-            outputStream.Write(nonceBase, 0, nonceBase.Length);
-
-            // Read the plaintext from the input stream and encrypt it in chunks
-            const int bufferSize = 4096;
-            var buffer = new byte[bufferSize];
-            int bytesRead;
-            long counter = 0;
-
-            while ((bytesRead = inputStream.Read(buffer, 0, buffer.Length)) > 0)
-            {
-                // Create a unique nonce for this chunk by XORing the counter with the nonce base
-                var nonce = new byte[dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize];
-                Buffer.BlockCopy(nonceBase, 0, nonce, 0, nonce.Length);
-
-                // XOR the last 8 bytes of the nonce with the counter
-                for (int i = 0; i < 8 && i < nonce.Length; i++)
-                {
-                    nonce[nonce.Length - 1 - i] ^= (byte)((counter >> (i * 8)) & 0xFF);
-                }
-
-                // Increment the counter for the next chunk
-                counter++;
-
-                // If we read a full buffer, encrypt and write it
-                if (bytesRead == bufferSize)
-                {
-                    var ciphertext = dotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(key, nonce, buffer);
-                    outputStream.Write(ciphertext, 0, ciphertext.Length);
-                }
-                else
-                {
-                    // If we read a partial buffer, create a new array with just the data we read
-                    var partialBuffer = new byte[bytesRead];
-                    Buffer.BlockCopy(buffer, 0, partialBuffer, 0, bytesRead);
-                    var ciphertext = dotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(key, nonce, partialBuffer);
-                    outputStream.Write(ciphertext, 0, ciphertext.Length);
-                }
-            }
-        }
 
         /// <summary>
         /// Decrypts the payload.
@@ -133,82 +67,19 @@ namespace dotAge.Core.Format
         public byte[] Decrypt()
         {
             // Check if the payload data is long enough to contain a nonce and at least some ciphertext
-            if (_data.Length < dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize + dotAge.Core.Crypto.ChaCha20Poly1305.TagSize)
+            if (_data.Length < DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize + DotAge.Core.Crypto.ChaCha20Poly1305.TagSize)
                 throw new InvalidOperationException("Payload data is too short");
 
             // Extract the nonce and ciphertext
-            var nonce = new byte[dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize];
-            var ciphertext = new byte[_data.Length - dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize];
+            var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize];
+            var ciphertext = new byte[_data.Length - DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize];
             Buffer.BlockCopy(_data, 0, nonce, 0, nonce.Length);
             Buffer.BlockCopy(_data, nonce.Length, ciphertext, 0, ciphertext.Length);
 
             // Decrypt the ciphertext
-            return dotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(_key, nonce, ciphertext);
+            return DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(_key, nonce, ciphertext);
         }
 
-        /// <summary>
-        /// Decrypts data from an input stream to an output stream.
-        /// </summary>
-        /// <param name="key">The ChaCha20-Poly1305 key.</param>
-        /// <param name="inputStream">The input stream containing encrypted data.</param>
-        /// <param name="outputStream">The output stream to write the decrypted data to.</param>
-        public static void DecryptStream(byte[] key, Stream inputStream, Stream outputStream)
-        {
-            if (key == null || key.Length != dotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
-                throw new ArgumentException($"Key must be {dotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
-
-            if (inputStream == null)
-                throw new ArgumentNullException(nameof(inputStream));
-
-            if (outputStream == null)
-                throw new ArgumentNullException(nameof(outputStream));
-
-            if (!inputStream.CanRead)
-                throw new ArgumentException("Input stream must be readable", nameof(inputStream));
-
-            if (!outputStream.CanWrite)
-                throw new ArgumentException("Output stream must be writable", nameof(outputStream));
-
-            // Read the nonce base from the input stream
-            var nonceBase = new byte[dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize];
-            int bytesRead = inputStream.Read(nonceBase, 0, nonceBase.Length);
-            if (bytesRead != nonceBase.Length)
-                throw new InvalidOperationException("Failed to read nonce from input stream");
-
-            // Read the ciphertext from the input stream and decrypt it in chunks
-            const int bufferSize = 4096 + dotAge.Core.Crypto.ChaCha20Poly1305.TagSize; // Buffer size plus tag size
-            var buffer = new byte[bufferSize];
-            long counter = 0;
-
-            while ((bytesRead = inputStream.Read(buffer, 0, buffer.Length)) > 0)
-            {
-                // Create a unique nonce for this chunk by XORing the counter with the nonce base
-                var nonce = new byte[dotAge.Core.Crypto.ChaCha20Poly1305.NonceSize];
-                Buffer.BlockCopy(nonceBase, 0, nonce, 0, nonce.Length);
-
-                // XOR the last 8 bytes of the nonce with the counter
-                for (int i = 0; i < 8 && i < nonce.Length; i++)
-                {
-                    nonce[nonce.Length - 1 - i] ^= (byte)((counter >> (i * 8)) & 0xFF);
-                }
-
-                // Increment the counter for the next chunk
-                counter++;
-
-                // If we read data, decrypt it
-                if (bytesRead > dotAge.Core.Crypto.ChaCha20Poly1305.TagSize)
-                {
-                    var ciphertextChunk = new byte[bytesRead];
-                    Buffer.BlockCopy(buffer, 0, ciphertextChunk, 0, bytesRead);
-                    var plaintextChunk = dotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(key, nonce, ciphertextChunk);
-                    outputStream.Write(plaintextChunk, 0, plaintextChunk.Length);
-                }
-                else
-                {
-                    throw new InvalidOperationException("Ciphertext chunk is too small");
-                }
-            }
-        }
 
         /// <summary>
         /// Gets the encrypted data.
@@ -227,5 +98,151 @@ namespace dotAge.Core.Format
         {
             return _key;
         }
+
+        /// <summary>
+        /// Encrypts a stream using the specified key.
+        /// </summary>
+        /// <param name="key">The ChaCha20-Poly1305 key.</param>
+        /// <param name="inputStream">The input stream containing the plaintext.</param>
+        /// <param name="outputStream">The output stream to write the ciphertext to.</param>
+        public static void EncryptStream(byte[] key, Stream inputStream, Stream outputStream)
+        {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(inputStream);
+        ArgumentNullException.ThrowIfNull(outputStream);
+
+        if (key.Length != DotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
+            throw new ArgumentException($"Key must be {DotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
+
+        // Generate a random nonce
+        var nonce = DotAge.Core.Crypto.ChaCha20Poly1305.GenerateNonce();
+
+        // Write the nonce to the output stream
+        outputStream.Write(nonce, 0, nonce.Length);
+
+        // Create a buffer for reading from the input stream
+        var buffer = new byte[4096];
+        int bytesRead;
+
+        // Read from the input stream and encrypt to the output stream
+        while ((bytesRead = inputStream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            var plaintext = new byte[bytesRead];
+            Buffer.BlockCopy(buffer, 0, plaintext, 0, bytesRead);
+
+            var ciphertext = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(key, nonce, plaintext);
+            outputStream.Write(ciphertext, 0, ciphertext.Length);
+        }
     }
+
+    /// <summary>
+    /// Encrypts a stream using the specified key asynchronously.
+    /// </summary>
+    /// <param name="key">The ChaCha20-Poly1305 key.</param>
+    /// <param name="inputStream">The input stream containing the plaintext.</param>
+    /// <param name="outputStream">The output stream to write the ciphertext to.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    public static async Task EncryptStreamAsync(byte[] key, Stream inputStream, Stream outputStream, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(inputStream);
+        ArgumentNullException.ThrowIfNull(outputStream);
+
+        if (key.Length != DotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
+            throw new ArgumentException($"Key must be {DotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
+
+        // Generate a random nonce
+        var nonce = DotAge.Core.Crypto.ChaCha20Poly1305.GenerateNonce();
+
+        // Write the nonce to the output stream
+        await outputStream.WriteAsync(nonce, 0, nonce.Length, cancellationToken).ConfigureAwait(false);
+
+        // Create a buffer for reading from the input stream
+        var buffer = new byte[4096];
+        int bytesRead;
+
+        // Read from the input stream and encrypt to the output stream
+        while ((bytesRead = await inputStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            var plaintext = new byte[bytesRead];
+            Buffer.BlockCopy(buffer, 0, plaintext, 0, bytesRead);
+
+            var ciphertext = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(key, nonce, plaintext);
+            await outputStream.WriteAsync(ciphertext, 0, ciphertext.Length, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Decrypts a stream using the specified key.
+    /// </summary>
+    /// <param name="key">The ChaCha20-Poly1305 key.</param>
+    /// <param name="inputStream">The input stream containing the ciphertext.</param>
+    /// <param name="outputStream">The output stream to write the plaintext to.</param>
+    public static void DecryptStream(byte[] key, Stream inputStream, Stream outputStream)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(inputStream);
+        ArgumentNullException.ThrowIfNull(outputStream);
+
+        if (key.Length != DotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
+            throw new ArgumentException($"Key must be {DotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
+
+        // Read the nonce from the input stream
+        var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize];
+        int bytesRead = inputStream.Read(nonce, 0, nonce.Length);
+        if (bytesRead != nonce.Length)
+            throw new InvalidOperationException("Failed to read nonce from input stream");
+
+        // Create a buffer for reading from the input stream
+        var buffer = new byte[4096 + DotAge.Core.Crypto.ChaCha20Poly1305.TagSize]; // Add space for the authentication tag
+
+        // Read from the input stream and decrypt to the output stream
+        while ((bytesRead = inputStream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            var ciphertext = new byte[bytesRead];
+            Buffer.BlockCopy(buffer, 0, ciphertext, 0, bytesRead);
+
+            var plaintext = DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(key, nonce, ciphertext);
+            outputStream.Write(plaintext, 0, plaintext.Length);
+        }
+    }
+
+    /// <summary>
+    /// Decrypts a stream using the specified key asynchronously.
+    /// </summary>
+    /// <param name="key">The ChaCha20-Poly1305 key.</param>
+    /// <param name="inputStream">The input stream containing the ciphertext.</param>
+    /// <param name="outputStream">The output stream to write the plaintext to.</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    public static async Task DecryptStreamAsync(byte[] key, Stream inputStream, Stream outputStream, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(inputStream);
+        ArgumentNullException.ThrowIfNull(outputStream);
+
+        if (key.Length != DotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
+            throw new ArgumentException($"Key must be {DotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(key));
+
+        // Read the nonce from the input stream
+        var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize];
+        int bytesRead = await inputStream.ReadAsync(nonce, 0, nonce.Length, cancellationToken).ConfigureAwait(false);
+        if (bytesRead != nonce.Length)
+            throw new InvalidOperationException("Failed to read nonce from input stream");
+
+        // Create a buffer for reading from the input stream
+        var buffer = new byte[4096 + DotAge.Core.Crypto.ChaCha20Poly1305.TagSize]; // Add space for the authentication tag
+
+        // Read from the input stream and decrypt to the output stream
+        while ((bytesRead = await inputStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            var ciphertext = new byte[bytesRead];
+            Buffer.BlockCopy(buffer, 0, ciphertext, 0, bytesRead);
+
+            var plaintext = DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(key, nonce, ciphertext);
+            await outputStream.WriteAsync(plaintext, 0, plaintext.Length, cancellationToken).ConfigureAwait(false);
+        }
+    }
+}
 }

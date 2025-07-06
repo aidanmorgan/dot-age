@@ -1,7 +1,7 @@
 using System;
 using System.Security.Cryptography;
 
-namespace dotAge.Core.Crypto
+namespace DotAge.Core.Crypto
 {
     /// <summary>
     /// Provides ChaCha20-Poly1305 encryption and decryption functionality.
@@ -38,7 +38,7 @@ namespace dotAge.Core.Crypto
         /// <param name="plaintext">The plaintext to encrypt.</param>
         /// <param name="associatedData">Optional associated data for the AEAD construction.</param>
         /// <returns>The ciphertext as a byte array, including the authentication tag.</returns>
-        public static byte[] Encrypt(byte[] key, byte[] nonce, byte[] plaintext, byte[] associatedData = null)
+        public static byte[] Encrypt(byte[] key, byte[] nonce, byte[] plaintext, byte[]? associatedData = null)
         {
             if (key == null || key.Length != KeySize)
                 throw new ArgumentException($"Key must be {KeySize} bytes", nameof(key));
@@ -71,7 +71,7 @@ namespace dotAge.Core.Crypto
         /// <param name="ciphertext">The ciphertext to decrypt, including the authentication tag.</param>
         /// <param name="associatedData">Optional associated data for the AEAD construction.</param>
         /// <returns>The plaintext as a byte array.</returns>
-        public static byte[] Decrypt(byte[] key, byte[] nonce, byte[] ciphertext, byte[] associatedData = null)
+        public static byte[] Decrypt(byte[] key, byte[] nonce, byte[] ciphertext, byte[]? associatedData = null)
         {
             if (key == null || key.Length != KeySize)
                 throw new ArgumentException($"Key must be {KeySize} bytes", nameof(key));

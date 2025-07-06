@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace dotAge.Core.Format
+namespace DotAge.Core.Format
 {
     /// <summary>
     /// Represents a recipient stanza in the age file format.
@@ -25,7 +25,7 @@ namespace dotAge.Core.Format
         /// <param name="type">The type of the stanza.</param>
         /// <param name="arguments">The arguments of the stanza.</param>
         /// <param name="body">The body of the stanza.</param>
-        public Stanza(string type, IEnumerable<string> arguments = null, IEnumerable<string> body = null)
+        public Stanza(string type, IEnumerable<string>? arguments = null, IEnumerable<string>? body = null)
         {
             if (string.IsNullOrEmpty(type))
                 throw new ArgumentException("Stanza type cannot be null or empty", nameof(type));

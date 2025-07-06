@@ -4,11 +4,14 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using dotAge.Core.Crypto;
-using dotAge.Core.Format;
-using dotAge.Core.Recipients;
+using System.Threading;
+using System.Threading.Tasks;
+using DotAge.Core.Crypto;
+using DotAge.Core.Format;
+using DotAge.Core.Recipients;
+using ChaCha20Poly1305 = DotAge.Core.Crypto.ChaCha20Poly1305;
 
-namespace dotAge.Core
+namespace DotAge.Core
 {
     /// <summary>
     /// Provides high-level API for the age encryption system.
@@ -16,10 +19,10 @@ namespace dotAge.Core
     public class Age
     {
         // The list of recipients
-        private readonly List<IRecipient> _recipients = new List<IRecipient>();
+        private readonly List<IRecipient> _recipients = new();
 
         // The list of identities (for decryption)
-        private readonly List<IRecipient> _identities = new List<IRecipient>();
+        private readonly List<IRecipient> _identities = new();
 
         /// <summary>
         /// Creates a new Age instance.
@@ -33,10 +36,10 @@ namespace dotAge.Core
         /// </summary>
         /// <param name="recipient">The recipient to add.</param>
         /// <returns>This Age instance for method chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when recipient is null.</exception>
         public Age AddRecipient(IRecipient recipient)
         {
-            if (recipient == null)
-                throw new ArgumentNullException(nameof(recipient));
+            ArgumentNullException.ThrowIfNull(recipient);
 
             _recipients.Add(recipient);
             return this;
@@ -47,10 +50,10 @@ namespace dotAge.Core
         /// </summary>
         /// <param name="identity">The identity to add.</param>
         /// <returns>This Age instance for method chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when identity is null.</exception>
         public Age AddIdentity(IRecipient identity)
         {
-            if (identity == null)
-                throw new ArgumentNullException(nameof(identity));
+            ArgumentNullException.ThrowIfNull(identity);
 
             _identities.Add(identity);
             return this;
@@ -61,23 +64,22 @@ namespace dotAge.Core
         /// </summary>
         /// <param name="plaintext">The plaintext to encrypt.</param>
         /// <returns>The encrypted data.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when plaintext is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when no recipients are specified.</exception>
         public byte[] Encrypt(byte[] plaintext)
         {
-            if (plaintext == null)
-                throw new ArgumentNullException(nameof(plaintext));
+            ArgumentNullException.ThrowIfNull(plaintext);
 
             if (_recipients.Count == 0)
+            {
                 throw new InvalidOperationException("No recipients specified");
+            }
 
             // Generate a random file key
-            var fileKey = dotAge.Core.Crypto.ChaCha20Poly1305.GenerateKey();
+            var fileKey = DotAge.Core.Crypto.ChaCha20Poly1305.GenerateKey();
 
             // Create a stanza for each recipient
-            var stanzas = new List<Stanza>();
-            foreach (var recipient in _recipients)
-            {
-                stanzas.Add(recipient.CreateStanza(fileKey));
-            }
+            var stanzas = _recipients.Select(recipient => recipient.CreateStanza(fileKey)).ToList();
 
             // Create the header
             var header = new Header(stanzas);
@@ -94,73 +96,74 @@ namespace dotAge.Core
             writer.Flush();
 
             // Write the payload
-            ms.Write(payload.GetData(), 0, payload.GetData().Length);
+            var payloadData = payload.GetData();
+            ms.Write(payloadData, 0, payloadData.Length);
 
             return ms.ToArray();
         }
 
         /// <summary>
-        /// Encrypts data from an input stream to an output stream for the specified recipients.
+        /// Encrypts data for the specified recipients asynchronously.
         /// </summary>
-        /// <param name="inputStream">The input stream containing plaintext to encrypt.</param>
-        /// <param name="outputStream">The output stream to write the encrypted data to.</param>
-        public void EncryptStream(Stream inputStream, Stream outputStream)
+        /// <param name="plaintext">The plaintext to encrypt.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that represents the asynchronous operation. The task result contains the encrypted data.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when plaintext is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when no recipients are specified.</exception>
+        public async Task<byte[]> EncryptAsync(byte[] plaintext, CancellationToken cancellationToken = default)
         {
-            if (inputStream == null)
-                throw new ArgumentNullException(nameof(inputStream));
-
-            if (outputStream == null)
-                throw new ArgumentNullException(nameof(outputStream));
-
-            if (!inputStream.CanRead)
-                throw new ArgumentException("Input stream must be readable", nameof(inputStream));
-
-            if (!outputStream.CanWrite)
-                throw new ArgumentException("Output stream must be writable", nameof(outputStream));
+            ArgumentNullException.ThrowIfNull(plaintext);
 
             if (_recipients.Count == 0)
-                throw new InvalidOperationException("No recipients specified");
-
-            // Generate a random file key
-            var fileKey = dotAge.Core.Crypto.ChaCha20Poly1305.GenerateKey();
-
-            // Create a stanza for each recipient
-            var stanzas = new List<Stanza>();
-            foreach (var recipient in _recipients)
             {
-                stanzas.Add(recipient.CreateStanza(fileKey));
+                throw new InvalidOperationException("No recipients specified");
             }
 
+            // Generate a random file key
+            var fileKey = DotAge.Core.Crypto.ChaCha20Poly1305.GenerateKey();
+
+            // Create a stanza for each recipient asynchronously
+            var stanzaTasks = _recipients.Select(recipient => recipient.CreateStanzaAsync(fileKey, cancellationToken));
+            var stanzas = await Task.WhenAll(stanzaTasks).ConfigureAwait(false);
+
             // Create the header
-            var header = new Header(stanzas);
+            var header = new Header(stanzas.ToList());
 
-            // Add a MAC to the header (required by the age format)
-            // For streaming encryption, we'll use a dummy MAC of all zeros
-            header.Mac = new byte[16]; // 16 bytes of zeros
+            // Encrypt the plaintext with the file key
+            var payload = Payload.Encrypt(fileKey, plaintext);
 
-            // Write the header to the output stream
-            // Note: We're not using a using statement here to avoid disposing the StreamWriter
-            // before we write the payload, as that could cause issues with the stream
-            var writer = new StreamWriter(outputStream, Encoding.ASCII, 1024, true);
-            writer.Write(header.Encode());
-            writer.Flush();
+            // Combine the header and payload
+            using var ms = new MemoryStream();
+            using var writer = new StreamWriter(ms, Encoding.ASCII);
 
-            // Encrypt the plaintext with the file key and write it to the output stream
-            Payload.EncryptStream(fileKey, inputStream, outputStream);
+            // Write the header
+            await writer.WriteAsync(header.Encode()).ConfigureAwait(false);
+            await writer.FlushAsync().ConfigureAwait(false);
+
+            // Write the payload
+            var payloadData = payload.GetData();
+            await ms.WriteAsync(payloadData, 0, payloadData.Length, cancellationToken).ConfigureAwait(false);
+
+            return ms.ToArray();
         }
+
 
         /// <summary>
         /// Decrypts data using the specified identities.
         /// </summary>
         /// <param name="ciphertext">The ciphertext to decrypt.</param>
         /// <returns>The decrypted plaintext.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when ciphertext is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when no identities are specified.</exception>
+        /// <exception cref="CryptographicException">Thrown when the file key cannot be unwrapped.</exception>
         public byte[] Decrypt(byte[] ciphertext)
         {
-            if (ciphertext == null)
-                throw new ArgumentNullException(nameof(ciphertext));
+            ArgumentNullException.ThrowIfNull(ciphertext);
 
             if (_identities.Count == 0)
+            {
                 throw new InvalidOperationException("No identities specified");
+            }
 
             // Parse the header and payload
             using var ms = new MemoryStream(ciphertext);
@@ -168,24 +171,33 @@ namespace dotAge.Core
 
             // Read the header
             var headerBuilder = new StringBuilder();
-            string line;
+            string? line;
             while ((line = reader.ReadLine()) != null)
             {
                 headerBuilder.AppendLine(line);
 
                 // Check if this is the end of the header
                 if (line.StartsWith("---"))
+                {
                     break;
+                }
             }
 
             var header = Header.Decode(headerBuilder.ToString());
 
             // Read the payload
             var payloadData = new byte[ms.Length - ms.Position];
-            ms.Read(payloadData, 0, payloadData.Length);
+            var bytesRead = ms.Read(payloadData, 0, payloadData.Length);
+
+            // Ensure we read the correct number of bytes
+            if (bytesRead < payloadData.Length)
+            {
+                // Resize the array to the actual number of bytes read
+                Array.Resize(ref payloadData, bytesRead);
+            }
 
             // Try to unwrap the file key using each identity
-            byte[] fileKey = null;
+            byte[]? fileKey = null;
             foreach (var identity in _identities)
             {
                 foreach (var stanza in header.Stanzas)
@@ -194,16 +206,22 @@ namespace dotAge.Core
                     {
                         fileKey = identity.UnwrapKey(stanza);
                         if (fileKey != null)
+                        {
                             break;
+                        }
                     }
                 }
 
                 if (fileKey != null)
+                {
                     break;
+                }
             }
 
             if (fileKey == null)
+            {
                 throw new CryptographicException("Failed to unwrap the file key");
+            }
 
             // Decrypt the payload
             var payload = new Payload(fileKey, payloadData);
@@ -211,82 +229,110 @@ namespace dotAge.Core
         }
 
         /// <summary>
-        /// Decrypts data from an input stream to an output stream using the specified identities.
+        /// Decrypts data using the specified identities asynchronously.
         /// </summary>
-        /// <param name="inputStream">The input stream containing encrypted data.</param>
-        /// <param name="outputStream">The output stream to write the decrypted data to.</param>
-        public void DecryptStream(Stream inputStream, Stream outputStream)
+        /// <param name="ciphertext">The ciphertext to decrypt.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that represents the asynchronous operation. The task result contains the decrypted plaintext.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when ciphertext is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when no identities are specified.</exception>
+        /// <exception cref="CryptographicException">Thrown when the file key cannot be unwrapped.</exception>
+        public async Task<byte[]> DecryptAsync(byte[] ciphertext, CancellationToken cancellationToken = default)
         {
-            if (inputStream == null)
-                throw new ArgumentNullException(nameof(inputStream));
-
-            if (outputStream == null)
-                throw new ArgumentNullException(nameof(outputStream));
-
-            if (!inputStream.CanRead)
-                throw new ArgumentException("Input stream must be readable", nameof(inputStream));
-
-            if (!outputStream.CanWrite)
-                throw new ArgumentException("Output stream must be writable", nameof(outputStream));
+            ArgumentNullException.ThrowIfNull(ciphertext);
 
             if (_identities.Count == 0)
+            {
                 throw new InvalidOperationException("No identities specified");
+            }
 
-            // Parse the header
-            using var reader = new StreamReader(inputStream, Encoding.ASCII, false, 1024, true);
+            // Parse the header and payload
+            using var ms = new MemoryStream(ciphertext);
+            using var reader = new StreamReader(ms, Encoding.ASCII);
+
+            // Read the header
             var headerBuilder = new StringBuilder();
-            string line;
-            while ((line = reader.ReadLine()) != null)
+            string? line;
+            while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
             {
                 headerBuilder.AppendLine(line);
 
                 // Check if this is the end of the header
                 if (line.StartsWith("---"))
+                {
                     break;
+                }
             }
 
             var header = Header.Decode(headerBuilder.ToString());
 
-            // Try to unwrap the file key using each identity
-            byte[] fileKey = null;
+            // Read the payload
+            var payloadData = new byte[ms.Length - ms.Position];
+            var bytesRead = await ms.ReadAsync(payloadData, 0, payloadData.Length, cancellationToken).ConfigureAwait(false);
+
+            // Ensure we read the correct number of bytes
+            if (bytesRead < payloadData.Length)
+            {
+                // Resize the array to the actual number of bytes read
+                Array.Resize(ref payloadData, bytesRead);
+            }
+
+            // Try to unwrap the file key using each identity asynchronously
+            byte[]? fileKey = null;
             foreach (var identity in _identities)
             {
                 foreach (var stanza in header.Stanzas)
                 {
                     if (stanza.Type == identity.Type)
                     {
-                        fileKey = identity.UnwrapKey(stanza);
+                        fileKey = await identity.UnwrapKeyAsync(stanza, cancellationToken).ConfigureAwait(false);
                         if (fileKey != null)
+                        {
                             break;
+                        }
                     }
                 }
 
                 if (fileKey != null)
+                {
                     break;
+                }
             }
 
             if (fileKey == null)
+            {
                 throw new CryptographicException("Failed to unwrap the file key");
+            }
 
             // Decrypt the payload
-            Payload.DecryptStream(fileKey, inputStream, outputStream);
+            var payload = new Payload(fileKey, payloadData);
+            return payload.Decrypt();
         }
+
 
         /// <summary>
         /// Encrypts a file for the specified recipients.
         /// </summary>
         /// <param name="inputPath">The path to the input file.</param>
         /// <param name="outputPath">The path to the output file.</param>
+        /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
         public void EncryptFile(string inputPath, string outputPath)
         {
             if (string.IsNullOrEmpty(inputPath))
+            {
                 throw new ArgumentException("Input path cannot be null or empty", nameof(inputPath));
+            }
 
             if (string.IsNullOrEmpty(outputPath))
+            {
                 throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
+            }
 
             if (!File.Exists(inputPath))
+            {
                 throw new FileNotFoundException("Input file not found", inputPath);
+            }
 
             // Read the input file
             var plaintext = File.ReadAllBytes(inputPath);
@@ -299,27 +345,39 @@ namespace dotAge.Core
         }
 
         /// <summary>
-        /// Encrypts a file for the specified recipients using streams.
+        /// Encrypts a file for the specified recipients asynchronously.
         /// </summary>
         /// <param name="inputPath">The path to the input file.</param>
         /// <param name="outputPath">The path to the output file.</param>
-        public void EncryptFileWithStreams(string inputPath, string outputPath)
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that represents the asynchronous operation.</returns>
+        /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
+        public async Task EncryptFileAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(inputPath))
+            {
                 throw new ArgumentException("Input path cannot be null or empty", nameof(inputPath));
+            }
 
             if (string.IsNullOrEmpty(outputPath))
+            {
                 throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
+            }
 
             if (!File.Exists(inputPath))
+            {
                 throw new FileNotFoundException("Input file not found", inputPath);
+            }
 
-            // Open the input and output files as streams
-            using var inputStream = new FileStream(inputPath, FileMode.Open, FileAccess.Read);
-            using var outputStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+            // Read the input file
+            var plaintext = await File.ReadAllBytesAsync(inputPath, cancellationToken).ConfigureAwait(false);
 
-            // Encrypt the input stream to the output stream
-            EncryptStream(inputStream, outputStream);
+            // Encrypt the plaintext
+            var ciphertext = await EncryptAsync(plaintext, cancellationToken).ConfigureAwait(false);
+
+            // Write the output file
+            await File.WriteAllBytesAsync(outputPath, ciphertext, cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -327,16 +385,24 @@ namespace dotAge.Core
         /// </summary>
         /// <param name="inputPath">The path to the input file.</param>
         /// <param name="outputPath">The path to the output file.</param>
+        /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
         public void DecryptFile(string inputPath, string outputPath)
         {
             if (string.IsNullOrEmpty(inputPath))
+            {
                 throw new ArgumentException("Input path cannot be null or empty", nameof(inputPath));
+            }
 
             if (string.IsNullOrEmpty(outputPath))
+            {
                 throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
+            }
 
             if (!File.Exists(inputPath))
+            {
                 throw new FileNotFoundException("Input file not found", inputPath);
+            }
 
             // Read the input file
             var ciphertext = File.ReadAllBytes(inputPath);
@@ -349,27 +415,366 @@ namespace dotAge.Core
         }
 
         /// <summary>
-        /// Decrypts a file using the specified identities using streams.
+        /// Decrypts a file using the specified identities asynchronously.
         /// </summary>
         /// <param name="inputPath">The path to the input file.</param>
         /// <param name="outputPath">The path to the output file.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that represents the asynchronous operation.</returns>
+        /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
+        public async Task DecryptFileAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(inputPath))
+            {
+                throw new ArgumentException("Input path cannot be null or empty", nameof(inputPath));
+            }
+
+            if (string.IsNullOrEmpty(outputPath))
+            {
+                throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
+            }
+
+            if (!File.Exists(inputPath))
+            {
+                throw new FileNotFoundException("Input file not found", inputPath);
+            }
+
+            // Read the input file
+            var ciphertext = await File.ReadAllBytesAsync(inputPath, cancellationToken).ConfigureAwait(false);
+
+            // Decrypt the ciphertext
+            var plaintext = await DecryptAsync(ciphertext, cancellationToken).ConfigureAwait(false);
+
+            // Write the output file
+            await File.WriteAllBytesAsync(outputPath, plaintext, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Encrypts data using a stream-based approach.
+        /// </summary>
+        /// <param name="inputStream">The input stream containing the plaintext.</param>
+        /// <param name="outputStream">The output stream to write the ciphertext to.</param>
+        /// <exception cref="ArgumentNullException">Thrown when inputStream or outputStream is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when no recipients are specified.</exception>
+        public void EncryptStream(Stream inputStream, Stream outputStream)
+        {
+            ArgumentNullException.ThrowIfNull(inputStream);
+            ArgumentNullException.ThrowIfNull(outputStream);
+
+            if (_recipients.Count == 0)
+            {
+                throw new InvalidOperationException("No recipients specified");
+            }
+
+            // Generate a random file key
+            var fileKey = DotAge.Core.Crypto.ChaCha20Poly1305.GenerateKey();
+
+            // Create a stanza for each recipient
+            var stanzas = _recipients.Select(recipient => recipient.CreateStanza(fileKey)).ToList();
+
+            // Create the header
+            var header = new Header(stanzas);
+
+            // Write the header to the output stream
+            using var writer = new StreamWriter(outputStream, Encoding.ASCII, leaveOpen: true);
+            writer.Write(header.Encode());
+            writer.Flush();
+
+            // Create a payload and encrypt the input stream
+            Payload.EncryptStream(fileKey, inputStream, outputStream);
+        }
+
+        /// <summary>
+        /// Encrypts data using a stream-based approach asynchronously.
+        /// </summary>
+        /// <param name="inputStream">The input stream containing the plaintext.</param>
+        /// <param name="outputStream">The output stream to write the ciphertext to.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that represents the asynchronous operation.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when inputStream or outputStream is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when no recipients are specified.</exception>
+        public async Task EncryptStreamAsync(Stream inputStream, Stream outputStream, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(inputStream);
+            ArgumentNullException.ThrowIfNull(outputStream);
+
+            if (_recipients.Count == 0)
+            {
+                throw new InvalidOperationException("No recipients specified");
+            }
+
+            // Generate a random file key
+            var fileKey = ChaCha20Poly1305.GenerateKey();
+
+            // Create a stanza for each recipient asynchronously
+            var stanzaTasks = _recipients.Select(recipient => recipient.CreateStanzaAsync(fileKey, cancellationToken));
+            var stanzas = await Task.WhenAll(stanzaTasks).ConfigureAwait(false);
+
+            // Create the header
+            var header = new Header(stanzas.ToList());
+
+            // Write the header to the output stream
+            using var writer = new StreamWriter(outputStream, Encoding.ASCII, leaveOpen: true);
+            await writer.WriteAsync(header.Encode()).ConfigureAwait(false);
+            await writer.FlushAsync().ConfigureAwait(false);
+
+            // Create a payload and encrypt the input stream
+            await Payload.EncryptStreamAsync(fileKey, inputStream, outputStream, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Decrypts data using a stream-based approach.
+        /// </summary>
+        /// <param name="inputStream">The input stream containing the ciphertext.</param>
+        /// <param name="outputStream">The output stream to write the plaintext to.</param>
+        /// <exception cref="ArgumentNullException">Thrown when inputStream or outputStream is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when no identities are specified.</exception>
+        /// <exception cref="CryptographicException">Thrown when the file key cannot be unwrapped.</exception>
+        public void DecryptStream(Stream inputStream, Stream outputStream)
+        {
+            ArgumentNullException.ThrowIfNull(inputStream);
+            ArgumentNullException.ThrowIfNull(outputStream);
+
+            if (_identities.Count == 0)
+            {
+                throw new InvalidOperationException("No identities specified");
+            }
+
+            // Read the header
+            using var reader = new StreamReader(inputStream, Encoding.ASCII, leaveOpen: true);
+            var headerBuilder = new StringBuilder();
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                headerBuilder.AppendLine(line);
+
+                // Check if this is the end of the header
+                if (line.StartsWith("---"))
+                {
+                    break;
+                }
+            }
+
+            var header = Header.Decode(headerBuilder.ToString());
+
+            // Try to unwrap the file key using each identity
+            byte[]? fileKey = null;
+            foreach (var identity in _identities)
+            {
+                foreach (var stanza in header.Stanzas)
+                {
+                    if (stanza.Type == identity.Type)
+                    {
+                        fileKey = identity.UnwrapKey(stanza);
+                        if (fileKey != null)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                if (fileKey != null)
+                {
+                    break;
+                }
+            }
+
+            if (fileKey == null)
+            {
+                throw new CryptographicException("Failed to unwrap the file key");
+            }
+
+            // Decrypt the payload
+            Payload.DecryptStream(fileKey, inputStream, outputStream);
+        }
+
+        /// <summary>
+        /// Decrypts data using a stream-based approach asynchronously.
+        /// </summary>
+        /// <param name="inputStream">The input stream containing the ciphertext.</param>
+        /// <param name="outputStream">The output stream to write the plaintext to.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that represents the asynchronous operation.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when inputStream or outputStream is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when no identities are specified.</exception>
+        /// <exception cref="CryptographicException">Thrown when the file key cannot be unwrapped.</exception>
+        public async Task DecryptStreamAsync(Stream inputStream, Stream outputStream, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(inputStream);
+            ArgumentNullException.ThrowIfNull(outputStream);
+
+            if (_identities.Count == 0)
+            {
+                throw new InvalidOperationException("No identities specified");
+            }
+
+            // Read the header
+            using var reader = new StreamReader(inputStream, Encoding.ASCII, leaveOpen: true);
+            var headerBuilder = new StringBuilder();
+            string? line;
+            while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
+            {
+                headerBuilder.AppendLine(line);
+
+                // Check if this is the end of the header
+                if (line.StartsWith("---"))
+                {
+                    break;
+                }
+            }
+
+            var header = Header.Decode(headerBuilder.ToString());
+
+            // Try to unwrap the file key using each identity asynchronously
+            byte[]? fileKey = null;
+            foreach (var identity in _identities)
+            {
+                foreach (var stanza in header.Stanzas)
+                {
+                    if (stanza.Type == identity.Type)
+                    {
+                        fileKey = await identity.UnwrapKeyAsync(stanza, cancellationToken).ConfigureAwait(false);
+                        if (fileKey != null)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                if (fileKey != null)
+                {
+                    break;
+                }
+            }
+
+            if (fileKey == null)
+            {
+                throw new CryptographicException("Failed to unwrap the file key");
+            }
+
+            // Decrypt the payload
+            await Payload.DecryptStreamAsync(fileKey, inputStream, outputStream, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Encrypts a file using a stream-based approach.
+        /// </summary>
+        /// <param name="inputPath">The path to the input file.</param>
+        /// <param name="outputPath">The path to the output file.</param>
+        /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
+        public void EncryptFileWithStreams(string inputPath, string outputPath)
+        {
+            if (string.IsNullOrEmpty(inputPath))
+            {
+                throw new ArgumentException("Input path cannot be null or empty", nameof(inputPath));
+            }
+
+            if (string.IsNullOrEmpty(outputPath))
+            {
+                throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
+            }
+
+            if (!File.Exists(inputPath))
+            {
+                throw new FileNotFoundException("Input file not found", inputPath);
+            }
+
+            using var inputStream = new FileStream(inputPath, FileMode.Open, FileAccess.Read);
+            using var outputStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+            EncryptStream(inputStream, outputStream);
+        }
+
+        /// <summary>
+        /// Encrypts a file using a stream-based approach asynchronously.
+        /// </summary>
+        /// <param name="inputPath">The path to the input file.</param>
+        /// <param name="outputPath">The path to the output file.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that represents the asynchronous operation.</returns>
+        /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
+        public async Task EncryptFileWithStreamsAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(inputPath))
+            {
+                throw new ArgumentException("Input path cannot be null or empty", nameof(inputPath));
+            }
+
+            if (string.IsNullOrEmpty(outputPath))
+            {
+                throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
+            }
+
+            if (!File.Exists(inputPath))
+            {
+                throw new FileNotFoundException("Input file not found", inputPath);
+            }
+
+            using var inputStream = new FileStream(inputPath, FileMode.Open, FileAccess.Read);
+            using var outputStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+            await EncryptStreamAsync(inputStream, outputStream, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Decrypts a file using a stream-based approach.
+        /// </summary>
+        /// <param name="inputPath">The path to the input file.</param>
+        /// <param name="outputPath">The path to the output file.</param>
+        /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
         public void DecryptFileWithStreams(string inputPath, string outputPath)
         {
             if (string.IsNullOrEmpty(inputPath))
+            {
                 throw new ArgumentException("Input path cannot be null or empty", nameof(inputPath));
+            }
 
             if (string.IsNullOrEmpty(outputPath))
+            {
                 throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
+            }
 
             if (!File.Exists(inputPath))
+            {
                 throw new FileNotFoundException("Input file not found", inputPath);
+            }
 
-            // Open the input and output files as streams
             using var inputStream = new FileStream(inputPath, FileMode.Open, FileAccess.Read);
             using var outputStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
-
-            // Decrypt the input stream to the output stream
             DecryptStream(inputStream, outputStream);
+        }
+
+        /// <summary>
+        /// Decrypts a file using a stream-based approach asynchronously.
+        /// </summary>
+        /// <param name="inputPath">The path to the input file.</param>
+        /// <param name="outputPath">The path to the output file.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that represents the asynchronous operation.</returns>
+        /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
+        public async Task DecryptFileWithStreamsAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(inputPath))
+            {
+                throw new ArgumentException("Input path cannot be null or empty", nameof(inputPath));
+            }
+
+            if (string.IsNullOrEmpty(outputPath))
+            {
+                throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
+            }
+
+            if (!File.Exists(inputPath))
+            {
+                throw new FileNotFoundException("Input file not found", inputPath);
+            }
+
+            using var inputStream = new FileStream(inputPath, FileMode.Open, FileAccess.Read);
+            using var outputStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+            await DecryptStreamAsync(inputStream, outputStream, cancellationToken).ConfigureAwait(false);
         }
     }
 }

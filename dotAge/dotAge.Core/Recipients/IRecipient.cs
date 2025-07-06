@@ -1,8 +1,8 @@
 using System.Threading;
 using System.Threading.Tasks;
-using dotAge.Core.Format;
+using DotAge.Core.Format;
 
-namespace dotAge.Core.Recipients
+namespace DotAge.Core.Recipients
 {
     /// <summary>
     /// Represents a recipient in the age encryption system.
@@ -34,7 +34,7 @@ namespace dotAge.Core.Recipients
         /// </summary>
         /// <param name="stanza">The stanza containing the wrapped file key.</param>
         /// <returns>The unwrapped file key, or null if the recipient cannot unwrap the file key.</returns>
-        byte[] UnwrapKey(Stanza stanza);
+        byte[]? UnwrapKey(Stanza stanza);
 
         /// <summary>
         /// Unwraps a file key from a stanza asynchronously.
@@ -42,6 +42,6 @@ namespace dotAge.Core.Recipients
         /// <param name="stanza">The stanza containing the wrapped file key.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>A task that represents the asynchronous operation. The task result contains the unwrapped file key, or null if the recipient cannot unwrap the file key.</returns>
-        Task<byte[]> UnwrapKeyAsync(Stanza stanza, CancellationToken cancellationToken = default);
+        Task<byte[]?> UnwrapKeyAsync(Stanza stanza, CancellationToken cancellationToken = default);
     }
 }

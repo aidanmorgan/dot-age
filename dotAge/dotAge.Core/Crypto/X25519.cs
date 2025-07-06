@@ -1,7 +1,7 @@
 using System;
 using Curve25519.NetCore;
 
-namespace dotAge.Core.Crypto
+namespace DotAge.Core.Crypto
 {
     /// <summary>
     /// Provides X25519 key generation and key agreement functionality.
