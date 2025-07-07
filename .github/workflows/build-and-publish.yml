@@ -10,61 +10,85 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
       with:
         fetch-depth: 0 # Required for GitVersion to work correctly
-    
+
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
         dotnet-version: '9.0.x'
-    
+
     - name: Install GitVersion
       uses: gittools/actions/gitversion/setup@v0.10.2
       with:
         versionSpec: '5.x'
-    
+
     - name: Determine Version
       id: gitversion
       uses: gittools/actions/gitversion/execute@v0.10.2
       with:
         useConfigFile: true
-    
+
     - name: Display GitVersion outputs
       run: |
         echo "SemVer: ${{ steps.gitversion.outputs.semVer }}"
         echo "NuGetVersion: ${{ steps.gitversion.outputs.nuGetVersion }}"
-    
+
     - name: Set Version Environment Variable
       run: echo "DOT_AGE_VERSION=${{ steps.gitversion.outputs.nuGetVersion }}" >> $GITHUB_ENV
-    
+
     - name: Update nuspec version
       run: |
         sed -i "s/<version>.*<\/version>/<version>${{ env.DOT_AGE_VERSION }}<\/version>/" DotAge/DotAge.Core/DotAge.Core.nuspec
-    
+
     - name: Restore dependencies
       run: dotnet restore DotAge/DotAge.sln
-    
+
+    - name: Install age and age-keygen
+      run: |
+        # Get the latest release version
+        AGE_VERSION=$(curl -s https://api.github.com/repos/FiloSottile/age/releases/latest | grep '"tag_name"' | sed -E 's/.*"tag_name": "v([^"]+)".*/\1/')
+        echo "Installing age version $AGE_VERSION"
+
+        # Download the appropriate binary for Linux
+        curl -L https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-linux-amd64.tar.gz -o age.tar.gz
+
+        # Extract the binaries
+        tar -xvf age.tar.gz
+
+        # Install to /usr/local/bin
+        sudo mv age/age /usr/local/bin/
+        sudo mv age/age-keygen /usr/local/bin/
+
+        # Make them executable
+        sudo chmod +x /usr/local/bin/age
+        sudo chmod +x /usr/local/bin/age-keygen
+
+        # Verify installation
+        age --version
+        age-keygen --version
+
     - name: Build
       run: dotnet build DotAge/DotAge.sln --configuration Release --no-restore
-    
+
     - name: Test
       run: dotnet test DotAge/DotAge.sln --configuration Release --no-build --verbosity normal
-    
+
     - name: Package
       run: |
         cd DotAge/DotAge.Core
         dotnet pack -c Release /p:NuspecFile=DotAge.Core.nuspec
-    
+
     - name: Upload NuGet package as artifact
       uses: actions/upload-artifact@v3
       with:
         name: nuget-package
         path: DotAge/DotAge.Core/bin/Release/DotAge.${{ env.DOT_AGE_VERSION }}.nupkg
-    
+
     - name: Publish to NuGet
       if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
       run: |
