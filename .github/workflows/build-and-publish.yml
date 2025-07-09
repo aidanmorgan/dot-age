@@ -72,11 +72,36 @@ jobs:
         age --version
         age-keygen --version
 
+    - name: Install rage and rage-keygen
+      run: |
+        # Get the latest release version
+        RAGE_VERSION=$(curl -s https://api.github.com/repos/str4d/rage/releases/latest | grep '"tag_name"' | sed -E 's/.*"tag_name": "v([^"]+)".*/\1/')
+        echo "Installing rage version $RAGE_VERSION"
+
+        # Download the appropriate binary for Linux
+        curl -L https://github.com/str4d/rage/releases/download/v${RAGE_VERSION}/rage-v${RAGE_VERSION}-x86_64-linux.tar.gz -o rage.tar.gz
+
+        # Extract the binaries
+        tar -xvf rage.tar.gz
+
+        # Install to /usr/local/bin
+        sudo mv rage/rage /usr/local/bin/
+        sudo mv rage/rage-keygen /usr/local/bin/
+
+        # Make them executable
+        sudo chmod +x /usr/local/bin/rage
+        sudo chmod +x /usr/local/bin/rage-keygen
+
+        # Verify installation
+        rage --version
+        rage-keygen --version
+
     - name: Build
       run: dotnet build DotAge/DotAge.sln --configuration Release --no-restore
 
     - name: Test
       run: dotnet test DotAge/DotAge.sln --configuration Release --no-build --verbosity normal
+
 
     - name: Package
       run: |

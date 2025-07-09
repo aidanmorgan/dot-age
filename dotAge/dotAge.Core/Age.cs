@@ -13,17 +13,10 @@ namespace DotAge.Core;
 public class Age
 {
     // The list of identities (for decryption)
-    private readonly List<IRecipient> _identities = new();
+    private readonly List<IRecipient> _identities = [];
 
     // The list of recipients
-    private readonly List<IRecipient> _recipients = new();
-
-    /// <summary>
-    ///     Creates a new Age instance.
-    /// </summary>
-    public Age()
-    {
-    }
+    private readonly List<IRecipient> _recipients = [];
 
     /// <summary>
     ///     Adds a recipient to the list of recipients.
@@ -34,7 +27,6 @@ public class Age
     public Age AddRecipient(IRecipient recipient)
     {
         ArgumentNullException.ThrowIfNull(recipient);
-
         _recipients.Add(recipient);
         return this;
     }
@@ -48,7 +40,6 @@ public class Age
     public Age AddIdentity(IRecipient identity)
     {
         ArgumentNullException.ThrowIfNull(identity);
-
         _identities.Add(identity);
         return this;
     }
@@ -59,12 +50,13 @@ public class Age
     /// <param name="plaintext">The plaintext to encrypt.</param>
     /// <returns>The encrypted data.</returns>
     /// <exception cref="ArgumentNullException">Thrown when plaintext is null.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when no recipients are specified.</exception>
+    /// <exception cref="AgeEncryptionException">Thrown when no recipients are specified.</exception>
     public byte[] Encrypt(byte[] plaintext)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
 
-        if (_recipients.Count == 0) throw new AgeEncryptionException("No recipients specified");
+        if (_recipients.Count == 0)
+            throw new AgeEncryptionException("No recipients specified");
 
         // Generate a random 16-byte file key (as per age specification)
         var fileKey = RandomUtils.GenerateRandomBytes(16);
@@ -72,10 +64,8 @@ public class Age
         // Create a stanza for each recipient
         var stanzas = _recipients.Select(recipient => recipient.CreateStanza(fileKey)).ToList();
 
-        // Create the header
+        // Create the header and calculate its MAC
         var header = new Header(stanzas);
-
-        // Calculate the MAC for the header
         header.CalculateMac(fileKey);
 
         // Create the payload
@@ -95,27 +85,28 @@ public class Age
         return ms.ToArray();
     }
 
-
     /// <summary>
     ///     Decrypts data using the specified identities.
     /// </summary>
     /// <param name="ciphertext">The ciphertext to decrypt.</param>
     /// <returns>The decrypted plaintext.</returns>
     /// <exception cref="ArgumentNullException">Thrown when ciphertext is null.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when no identities are specified.</exception>
-    /// <exception cref="CryptographicException">Thrown when the file key cannot be unwrapped.</exception>
+    /// <exception cref="AgeDecryptionException">Thrown when no identities are specified or no identity matched any recipient.</exception>
+    /// <exception cref="AgeFormatException">Thrown when the age file is malformed.</exception>
+    /// <exception cref="AgeCryptoException">Thrown when there's a cryptographic error.</exception>
     public byte[] Decrypt(byte[] ciphertext)
     {
         ArgumentNullException.ThrowIfNull(ciphertext);
 
-        if (_identities.Count == 0) throw new AgeDecryptionException("No identities specified");
+        if (_identities.Count == 0)
+            throw new AgeDecryptionException("No identities specified");
 
         // Parse the header and get payload start position
         var parseResult = ParseHeaderWithPosition(ciphertext);
-        if (parseResult == null)
+        if (parseResult is not { } headerInfo)
             throw new AgeFormatException("Malformed age file: no header footer found");
 
-        var (header, payloadStart) = parseResult.Value;
+        var (header, payloadStart) = headerInfo;
 
         // Create a new stream positioned at the payload start
         using var ms = new MemoryStream(ciphertext);
@@ -125,40 +116,43 @@ public class Age
         byte[]? fileKey = null;
         foreach (var identity in _identities)
         {
-            foreach (var stanza in header.Stanzas)
-                if (stanza.Type == identity.Type)
-                    try
-                    {
-                        fileKey = identity.UnwrapKey(stanza);
-                        if (fileKey != null) break;
-                    }
-                    catch (CryptographicException)
-                    {
-                        // Continue to next stanza
-                    }
+            foreach (var stanza in header.Stanzas.Where(s => s.Type == identity.Type))
+            {
+                try
+                {
+                    fileKey = identity.UnwrapKey(stanza);
+                    if (fileKey is not null)
+                        break;
+                }
+                catch (CryptographicException)
+                {
+                    // Continue to next stanza
+                }
+            }
 
-            if (fileKey != null) break;
+            if (fileKey is not null)
+                break;
         }
 
-        if (fileKey == null) throw new AgeDecryptionException("No identity matched any of the recipients");
+        if (fileKey is null)
+            throw new AgeDecryptionException("No identity matched any of the recipients");
 
         // Verify the header MAC
         header.CalculateMac(fileKey);
-        if (header.Mac == null) throw new AgeCryptoException("Failed to calculate header MAC");
+        if (header.Mac is null)
+            throw new AgeCryptoException("Failed to calculate header MAC");
 
-        // The stream is now positioned at the start of the payload (the nonce)
+        // The stream is now positioned at the start of the payload
         var payload = new Payload(fileKey);
         return payload.DecryptData(ms);
     }
-
 
     /// <summary>
     ///     Encrypts a file for the specified recipients.
     /// </summary>
     /// <param name="inputPath">The path to the input file.</param>
     /// <param name="outputPath">The path to the output file.</param>
-    /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
-    /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
+    /// <exception cref="AgeFormatException">Thrown when input or output path is invalid or input file not found.</exception>
     public void EncryptFile(string inputPath, string outputPath)
     {
         if (string.IsNullOrEmpty(inputPath))
@@ -167,7 +161,8 @@ public class Age
         if (string.IsNullOrEmpty(outputPath))
             throw new AgeFormatException("Output path cannot be null or empty");
 
-        if (!File.Exists(inputPath)) throw new AgeFormatException("Input file not found");
+        if (!File.Exists(inputPath))
+            throw new AgeFormatException("Input file not found");
 
         // Read the input file
         var plaintext = File.ReadAllBytes(inputPath);
@@ -179,14 +174,40 @@ public class Age
         File.WriteAllBytes(outputPath, ciphertext);
     }
 
+    /// <summary>
+    ///     Encrypts a file for the specified recipients asynchronously.
+    /// </summary>
+    /// <param name="inputPath">The path to the input file.</param>
+    /// <param name="outputPath">The path to the output file.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <exception cref="AgeFormatException">Thrown when input or output path is invalid or input file not found.</exception>
+    public async Task EncryptFileAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(inputPath))
+            throw new AgeFormatException("Input path cannot be null or empty");
+
+        if (string.IsNullOrEmpty(outputPath))
+            throw new AgeFormatException("Output path cannot be null or empty");
+
+        if (!File.Exists(inputPath))
+            throw new AgeFormatException("Input file not found");
+
+        // Read the input file
+        var plaintext = await File.ReadAllBytesAsync(inputPath, cancellationToken);
+
+        // Encrypt the plaintext
+        var ciphertext = Encrypt(plaintext);
+
+        // Write the output file
+        await File.WriteAllBytesAsync(outputPath, ciphertext, cancellationToken);
+    }
 
     /// <summary>
     ///     Decrypts a file using the specified identities.
     /// </summary>
     /// <param name="inputPath">The path to the input file.</param>
     /// <param name="outputPath">The path to the output file.</param>
-    /// <exception cref="ArgumentException">Thrown when input or output path is null or empty.</exception>
-    /// <exception cref="FileNotFoundException">Thrown when the input file is not found.</exception>
+    /// <exception cref="AgeFormatException">Thrown when input or output path is invalid or input file not found.</exception>
     public void DecryptFile(string inputPath, string outputPath)
     {
         if (string.IsNullOrEmpty(inputPath))
@@ -195,7 +216,8 @@ public class Age
         if (string.IsNullOrEmpty(outputPath))
             throw new AgeFormatException("Output path cannot be null or empty");
 
-        if (!File.Exists(inputPath)) throw new AgeFormatException("Input file not found");
+        if (!File.Exists(inputPath))
+            throw new AgeFormatException("Input file not found");
 
         // Read the input file
         var ciphertext = File.ReadAllBytes(inputPath);
@@ -205,6 +227,34 @@ public class Age
 
         // Write the output file
         File.WriteAllBytes(outputPath, plaintext);
+    }
+
+    /// <summary>
+    ///     Decrypts a file using the specified identities asynchronously.
+    /// </summary>
+    /// <param name="inputPath">The path to the input file.</param>
+    /// <param name="outputPath">The path to the output file.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <exception cref="AgeFormatException">Thrown when input or output path is invalid or input file not found.</exception>
+    public async Task DecryptFileAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(inputPath))
+            throw new AgeFormatException("Input path cannot be null or empty");
+
+        if (string.IsNullOrEmpty(outputPath))
+            throw new AgeFormatException("Output path cannot be null or empty");
+
+        if (!File.Exists(inputPath))
+            throw new AgeFormatException("Input file not found");
+
+        // Read the input file
+        var ciphertext = await File.ReadAllBytesAsync(inputPath, cancellationToken);
+
+        // Decrypt the ciphertext
+        var plaintext = Decrypt(ciphertext);
+
+        // Write the output file
+        await File.WriteAllBytesAsync(outputPath, plaintext, cancellationToken);
     }
 
     /// <summary>
@@ -221,6 +271,7 @@ public class Age
             var headerBytes = new List<byte>();
             var lineBuffer = new List<byte>();
             var foundFooter = false;
+
             int b;
             while ((b = ms.ReadByte()) != -1)
             {
@@ -228,7 +279,9 @@ public class Age
                 if (b == '\n')
                 {
                     // Check if this line is the footer
-                    if (lineBuffer.Count >= 3 && lineBuffer[0] == (byte)'-' && lineBuffer[1] == (byte)'-' &&
+                    if (lineBuffer.Count >= 3 && 
+                        lineBuffer[0] == (byte)'-' && 
+                        lineBuffer[1] == (byte)'-' &&
                         lineBuffer[2] == (byte)'-')
                     {
                         foundFooter = true;
@@ -249,7 +302,9 @@ public class Age
             while (true)
             {
                 var skipByte = ms.ReadByte();
-                if (skipByte == -1) break;
+                if (skipByte == -1)
+                    break;
+
                 if (skipByte != '\n' && skipByte != '\r' && skipByte != ' ' && skipByte != '\t')
                 {
                     ms.Seek(-1, SeekOrigin.Current);
@@ -274,11 +329,8 @@ public class Age
     /// </summary>
     /// <param name="ciphertext">The ciphertext to parse.</param>
     /// <returns>The parsed header, or null if parsing fails.</returns>
-    private static Header? ParseHeader(byte[] ciphertext)
-    {
-        var result = ParseHeaderWithPosition(ciphertext);
-        return result?.header;
-    }
+    private static Header? ParseHeader(byte[] ciphertext) => 
+        ParseHeaderWithPosition(ciphertext)?.header;
 
     /// <summary>
     ///     Detects if the given ciphertext is passphrase-encrypted by checking for scrypt stanzas.
@@ -290,10 +342,6 @@ public class Age
         ArgumentNullException.ThrowIfNull(ciphertext);
 
         var header = ParseHeader(ciphertext);
-        if (header == null)
-            return false;
-
-        // Check if any stanza is of type "scrypt"
-        return header.Stanzas.Any(stanza => stanza.Type == "scrypt");
+        return header?.Stanzas.Any(stanza => stanza.Type == "scrypt") ?? false;
     }
 }

@@ -4,6 +4,7 @@ using DotAge.Cli;
 using DotAge.KeyGen;
 using Microsoft.Extensions.Logging;
 using Xunit;
+using Program = DotAge.Cli.Program;
 
 // prevent the tests running in parallel to make life a bit easier when dealing with files and processes
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
@@ -251,6 +252,9 @@ public static class TestUtils
         return await RunCommandAsync(RageKeyGenBinaryPath, arguments, input, logger);
     }
 
+    private static readonly DotAge.Cli.Program _cli = new Program();
+    private static readonly DotAge.KeyGen.Program _keyGen = new DotAge.KeyGen.Program();
+    
     /// <summary>
     ///     Runs the dotage CLI using the static Run method instead of external binary.
     /// </summary>
@@ -279,7 +283,8 @@ public static class TestUtils
             var args = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             
             // Run the dotage CLI
-            var exitCode = await new DotAgeCliApp().InvokeAsync(args, logger);
+            
+            var exitCode = await _cli.RunAsync(args);
 
             return new CommandResult
             {
@@ -321,7 +326,7 @@ public static class TestUtils
             var args = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             
             // Run the dotage-keygen CLI
-            var exitCode = DotAge.KeyGen.Program.Run(args);
+            var exitCode = await _keyGen.RunAsync(args);
 
             return new CommandResult
             {

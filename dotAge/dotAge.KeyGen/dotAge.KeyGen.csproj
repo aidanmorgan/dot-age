@@ -5,7 +5,7 @@
         <TargetFramework>net9.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <AssemblyName>age-keygen</AssemblyName>
+        <AssemblyName>dotage-keygen</AssemblyName>
         <Description>.NET implementation of the age-keygen tool</Description>
 
         <!-- Project Metadata -->
@@ -21,5 +21,11 @@
     <ItemGroup>
         <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1"/>
     </ItemGroup>
+
+    <!-- Post-build event to rename the executable -->
+    <Target Name="RenameExecutable" AfterTargets="Build">
+        <Exec Command="if exist &quot;$(OutputPath)$(AssemblyName).exe&quot; (move /y &quot;$(OutputPath)$(AssemblyName).exe&quot; &quot;$(OutputPath)age-keygen.exe&quot;)" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+        <Exec Command="if [ -f &quot;$(OutputPath)$(AssemblyName)&quot; ]; then mv &quot;$(OutputPath)$(AssemblyName)&quot; &quot;$(OutputPath)age-keygen&quot;; fi" Condition="$([MSBuild]::IsOSPlatform('Unix'))" />
+    </Target>
 
 </Project>

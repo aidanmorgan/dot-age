@@ -18,9 +18,11 @@
     <ItemGroup>
         <ProjectReference Include="..\DotAge.Core\DotAge.Core.csproj"/>
     </ItemGroup>
-    
-    <PropertyGroup>
-        <TargetName>dotage</TargetName>
-    </PropertyGroup>
+
+    <!-- Post-build event to rename the executable -->
+    <Target Name="RenameExecutable" AfterTargets="Build">
+        <Exec Command="if exist &quot;$(OutputPath)$(AssemblyName).exe&quot; (move /y &quot;$(OutputPath)$(AssemblyName).exe&quot; &quot;$(OutputPath)dotage.exe&quot;)" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+        <Exec Command="if [ -f &quot;$(OutputPath)$(AssemblyName)&quot; ]; then mv &quot;$(OutputPath)$(AssemblyName)&quot; &quot;$(OutputPath)dotage&quot;; fi" Condition="$([MSBuild]::IsOSPlatform('Unix'))" />
+    </Target>
 
 </Project> 

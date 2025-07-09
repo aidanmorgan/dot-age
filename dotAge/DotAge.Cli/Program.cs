@@ -1,48 +1,20 @@
 using System.CommandLine;
+using System.Security.Cryptography;
 using System.Text;
-using System.Collections.Generic;
 using DotAge.Core;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
 using DotAge.Core.Crypto;
 
-// Added for args.Contains
-
 namespace DotAge.Cli;
 
+/// <summary>
+/// Entry point for the DotAge CLI application.
+/// </summary>
 public class Program
 {
-    public static int Main(string[] args)
-    {
-        return Run(args);
-    }
-
-    public static int Run(string[] args)
-    {
-        // Use default logger for console
-        var loggerFactory = LoggerFactory.Create(builder =>
-            builder.AddConsole().SetMinimumLevel(LogLevel.Information));
-        var logger = loggerFactory.CreateLogger<DotAgeCliApp>();
-        var exitCode = new DotAgeCliApp().InvokeAsync(args, logger).GetAwaiter().GetResult();
-        return exitCode;
-    }
-}
-
-public class DotAgeCliApp
-{
-    public async Task<int> InvokeAsync(string[] args, ILogger? logger = null)
-    {
-        logger ??= LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information))
-            .CreateLogger<DotAgeCliApp>();
-
-        var rootCommand = new RootCommand("Encrypt or decrypt files using the age format")
-        {
-            CreateEncryptCommand(logger),
-            CreateDecryptCommand(logger)
-        };
-
-        rootCommand.Description = @"Usage:
+    private const string UsageDescription = @"Usage:
     dotage [--encrypt] (-r RECIPIENT | -R PATH)... [--armor] [-o OUTPUT] [INPUT]
     dotage [--encrypt] --passphrase [--armor] [-o OUTPUT] [INPUT]
     dotage --decrypt [-i PATH]... [-o OUTPUT] [INPUT]
@@ -72,6 +44,48 @@ Example:
     $ tar cvz ~/data | dotage -r age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p > data.tar.gz.age
     $ dotage --decrypt -i key.txt -o data.tar.gz data.tar.gz.age";
 
+    /// <summary>
+    /// Creates a logger factory with console logging.
+    /// </summary>
+    /// <returns>A configured logger factory.</returns>
+    private static ILoggerFactory CreateLoggerFactory() =>
+        LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
+
+
+    /// <summary>
+    /// Application entry point.
+    /// </summary>
+    /// <param name="args">Command line arguments.</param>
+    /// <returns>Exit code.</returns>
+    public static async Task<int> Main(string[] args)
+    {
+        var program = new Program();
+        return await program.RunAsync(args);
+    }
+
+    /// <summary>
+    /// Runs the application asynchronously with the specified arguments.
+    /// </summary>
+    /// <param name="args">Command line arguments.</param>
+    /// <returns>Exit code.</returns>
+    public async Task<int> RunAsync(string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        // Use default logger for console
+        using var loggerFactory = CreateLoggerFactory();
+        var logger = loggerFactory.CreateLogger($"{nameof(Program)}");
+
+        // Create commands
+        var rootCommand = new RootCommand("Encrypt or decrypt files using the age format")
+        {
+            CreateEncryptCommand(logger),
+            CreateDecryptCommand(logger)
+        };
+
+        rootCommand.Description = UsageDescription;
+
+        // Parse arguments
         var parseResult = rootCommand.Parse(args);
 
         // Special handling for help flags: always print help and return 0
@@ -82,31 +96,39 @@ Example:
         }
 
         // Check for unknown tokens and treat them as errors (like age CLI)
-
         if (parseResult.UnmatchedTokens.Count > 0)
         {
-            logger.LogError($"flag provided but not defined: {string.Join(", ", parseResult.UnmatchedTokens)}");
+            logger.LogError($"Flag provided but not defined: {string.Join(", ", parseResult.UnmatchedTokens)}");
             return 2;
         }
 
         return await rootCommand.InvokeAsync(args);
     }
 
+
+    /// <summary>
+    /// Creates the encrypt command.
+    /// </summary>
+    /// <param name="logger">Logger instance.</param>
+    /// <returns>The encrypt command.</returns>
     private Command CreateEncryptCommand(ILogger logger)
     {
         var encryptOption = new Option<bool>(new[] { "-e", "--encrypt" },
             "Encrypt the input to the output. Default if omitted.");
-        var armorOption = new Option<bool>(new[] { "-a", "--armor" }, "Encrypt to a PEM encoded format.");
-        var passphraseOption = new Option<bool>(new[] { "-p", "--passphrase" }, "Encrypt with a passphrase.");
+        var armorOption = new Option<bool>(new[] { "-a", "--armor" },
+            "Encrypt to a PEM encoded format.");
+        var passphraseOption = new Option<bool>(new[] { "-p", "--passphrase" },
+            "Encrypt with a passphrase.");
         var recipientOption = new Option<string[]>(new[] { "-r", "--recipient" },
             "Encrypt to the specified RECIPIENT. Can be repeated.");
         var recipientsFileOption = new Option<string[]>(new[] { "-R", "--recipients-file" },
             "Encrypt to recipients listed at PATH. Can be repeated.");
         var identityOption = new Option<string[]>(new[] { "-i", "--identity" },
             "Use the identity file at PATH. Can be repeated.");
-        var outputOption =
-            new Option<string>(new[] { "-o", "--output" }, "Write the result to the file at path OUTPUT.");
-        var inputArgument = new Argument<string?>("input", "Input file (defaults to standard input)");
+        var outputOption = new Option<string>(new[] { "-o", "--output" },
+            "Write the result to the file at path OUTPUT.");
+        var inputArgument = new Argument<string?>("input",
+            "Input file (defaults to standard input)");
 
         var encryptCommand = new Command("encrypt", "Encrypt the input to the output")
         {
@@ -123,7 +145,7 @@ Example:
         encryptCommand.SetHandler(
             async (encryptFlag, armorFlag, passphraseFlag, recipientFlags, recipientsFileFlags, identityFlags,
                     outputFlag, inputArg) =>
-                await HandleEncrypt(encryptFlag, armorFlag, passphraseFlag, recipientFlags, recipientsFileFlags,
+                await HandleEncryptAsync(encryptFlag, armorFlag, passphraseFlag, recipientFlags, recipientsFileFlags,
                     identityFlags, outputFlag, inputArg, logger),
             encryptOption,
             armorOption,
@@ -138,14 +160,21 @@ Example:
         return encryptCommand;
     }
 
+    /// <summary>
+    /// Creates the decrypt command.
+    /// </summary>
+    /// <param name="logger">Logger instance.</param>
+    /// <returns>The decrypt command.</returns>
     private Command CreateDecryptCommand(ILogger logger)
     {
-        var decryptOption = new Option<bool>(new[] { "-d", "--decrypt" }, "Decrypt the input to the output.");
+        var decryptOption = new Option<bool>(new[] { "-d", "--decrypt" },
+            "Decrypt the input to the output.");
         var identityOption = new Option<string[]>(new[] { "-i", "--identity" },
             "Use the identity file at PATH. Can be repeated.");
-        var outputOption =
-            new Option<string>(new[] { "-o", "--output" }, "Write the result to the file at path OUTPUT.");
-        var inputArgument = new Argument<string?>("input", "Input file (defaults to standard input)");
+        var outputOption = new Option<string>(new[] { "-o", "--output" },
+            "Write the result to the file at path OUTPUT.");
+        var inputArgument = new Argument<string?>("input",
+            "Input file (defaults to standard input)");
 
         var decryptCommand = new Command("decrypt", "Decrypt the input to the output")
         {
@@ -157,7 +186,7 @@ Example:
 
         decryptCommand.SetHandler(
             async (decryptFlag, identityFlags, outputFlag, inputArg) =>
-                await HandleDecrypt(decryptFlag, identityFlags, outputFlag, inputArg, logger),
+                await HandleDecryptAsync(decryptFlag, identityFlags, outputFlag, inputArg, logger),
             decryptOption,
             identityOption,
             outputOption,
@@ -167,7 +196,10 @@ Example:
         return decryptCommand;
     }
 
-    private static Task<int> HandleEncrypt(
+    /// <summary>
+    /// Handles the encrypt command.
+    /// </summary>
+    private async Task<int> HandleEncryptAsync(
         bool encryptFlag,
         bool armorFlag,
         bool passphraseFlag,
@@ -180,149 +212,237 @@ Example:
     {
         try
         {
-            if (armorFlag) logger.LogWarning("Armor format is not yet implemented");
+            if (armorFlag)
+                logger.LogWarning("Armor format is not yet implemented");
 
+            // Validate input parameters
+            if (!ValidateEncryptionParameters(passphraseFlag, recipientFlags, recipientsFileFlags, identityFlags,
+                    logger))
+                return 1;
+
+            // Create Age instance and configure recipients
             var age = new Age();
-            
+
             if (passphraseFlag)
             {
-                // Passphrase encryption - prompt for passphrase and encrypt
-                var passphrase = PromptForPassphrase(logger);
-                if (string.IsNullOrEmpty(passphrase))
-                {
-                    logger.LogError("Passphrase cannot be empty");
-                    return Task.FromResult(1);
-                }
-
-                var scryptRecipient = new ScryptRecipient(passphrase);
-                age.AddRecipient(scryptRecipient);
-            }
-
-            // Validate that we have at least one recipient or passphrase
-            if ((recipientFlags == null || recipientFlags.Length == 0) &&
-                (recipientsFileFlags == null || recipientsFileFlags.Length == 0) &&
-                (identityFlags == null || identityFlags.Length == 0) &&
-                !passphraseFlag)
-            {
-                logger.LogError("No recipients specified. Use -r, -R, -i, or -p to specify recipients.");
-                return Task.FromResult(1);
-            }
-
-            // Validate that passphrase is not combined with other recipients
-            if (passphraseFlag && 
-                ((recipientFlags != null && recipientFlags.Length > 0) ||
-                 (recipientsFileFlags != null && recipientsFileFlags.Length > 0) ||
-                 (identityFlags != null && identityFlags.Length > 0)))
-            {
-                logger.LogError("Passphrase encryption cannot be combined with other recipients.");
-                return Task.FromResult(1);
-            }
-
-            byte[] inputData;
-            if (string.IsNullOrEmpty(inputArg) || inputArg == "-")
-            {
-                using var stdin = Console.OpenStandardInput();
-                using var ms = new MemoryStream();
-                stdin.CopyTo(ms);
-                inputData = ms.ToArray();
+                if (!await ConfigurePassphraseEncryption(age, logger))
+                    return 1;
             }
             else
             {
-                // Validate that the input file exists and is not a flag
-                if (inputArg.StartsWith("-"))
-                {
-                    logger.LogError($"Invalid argument: {inputArg}. Did you mean to specify an input file?");
-                    return Task.FromResult(1);
-                }
-
-                if (!File.Exists(inputArg))
-                {
-                    logger.LogError($"Input file not found: {inputArg}");
-                    return Task.FromResult(1);
-                }
-
-                inputData = File.ReadAllBytes(inputArg);
+                // Add recipients from various sources
+                if (!await ConfigureRecipients(age, recipientFlags, recipientsFileFlags, identityFlags, logger))
+                    return 1;
             }
 
-            if (recipientFlags != null)
-                foreach (var recipient in recipientFlags)
-                    try
-                    {
-                        var publicKey = KeyFileUtils.DecodeAgePublicKey(recipient);
-                        age.AddRecipient(new X25519Recipient(publicKey));
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError($"Invalid recipient '{recipient}': {ex.Message}");
-                        return Task.FromResult(1);
-                    }
+            // Read input data
+            byte[] inputData;
+            try
+            {
+                inputData = await ReadInputDataAsync(inputArg, logger);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex.Message);
+                return 1;
+            }
 
-            if (recipientsFileFlags != null)
-                foreach (var recipientsFile in recipientsFileFlags)
-                {
-                    if (!File.Exists(recipientsFile))
-                    {
-                        logger.LogError($"Recipients file not found: {recipientsFile}");
-                        return Task.FromResult(1);
-                    }
-
-                    try
-                    {
-                        var recipients = KeyFileUtils.ReadRecipientsFile(recipientsFile);
-                        foreach (var recipient in recipients)
-                        {
-                            var publicKey = KeyFileUtils.DecodeAgePublicKey(recipient);
-                            age.AddRecipient(new X25519Recipient(publicKey));
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError($"Error reading recipients file '{recipientsFile}': {ex.Message}");
-                        return Task.FromResult(1);
-                    }
-                }
-
-            if (identityFlags != null)
-                foreach (var identityFile in identityFlags)
-                {
-                    if (!File.Exists(identityFile))
-                    {
-                        logger.LogError($"Identity file not found: {identityFile}");
-                        return Task.FromResult(1);
-                    }
-
-                    try
-                    {
-                        var (privateKeyBytes, _) = KeyFileUtils.ParseKeyFileAsBytes(identityFile);
-                        var publicKeyBytes = X25519.GetPublicKeyFromPrivateKey(privateKeyBytes);
-                        age.AddRecipient(new X25519Recipient(publicKeyBytes));
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError($"Error reading identity file '{identityFile}': {ex.Message}");
-                        return Task.FromResult(1);
-                    }
-                }
-
+            // Encrypt the data
             var encryptedData = age.Encrypt(inputData);
 
-            if (string.IsNullOrEmpty(outputFlag) || outputFlag == "-")
-            {
-                Console.WriteLine(encryptedData); // Add newline to prevent shell prompt from appearing on same line
-            }
-            else
-                File.WriteAllBytes(outputFlag, encryptedData);
+            // Write the output
+            await WriteOutputDataAsync(encryptedData, outputFlag);
 
-            return Task.FromResult(0);
+            return 0;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Encryption failed");
-            return Task.FromResult(1);
+            return 1;
         }
     }
 
-    private static Task<int> HandleDecrypt(
+    /// <summary>
+    /// Validates encryption parameters to ensure they are valid.
+    /// </summary>
+    /// <returns>True if parameters are valid, false otherwise.</returns>
+    private bool ValidateEncryptionParameters(
+        bool passphraseFlag,
+        string[]? recipientFlags,
+        string[]? recipientsFileFlags,
+        string[]? identityFlags,
+        ILogger logger)
+    {
+        // Validate that we have at least one recipient or passphrase
+        bool hasRecipients =
+            (recipientFlags?.Length > 0) ||
+            (recipientsFileFlags?.Length > 0) ||
+            (identityFlags?.Length > 0);
+
+        if (!hasRecipients && !passphraseFlag)
+        {
+            logger.LogError("No recipients specified. Use -r, -R, -i, or -p to specify recipients.");
+            return false;
+        }
+
+        // Validate that passphrase is not combined with other recipients
+        if (passphraseFlag && hasRecipients)
+        {
+            logger.LogError("Passphrase encryption cannot be combined with other recipients.");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Configures passphrase encryption by prompting for a passphrase and adding a ScryptRecipient.
+    /// </summary>
+    /// <returns>True if successful, false otherwise.</returns>
+    private async Task<bool> ConfigurePassphraseEncryption(Age age, ILogger logger)
+    {
+        var passphrase = PromptForPassphrase(logger);
+        if (string.IsNullOrEmpty(passphrase))
+        {
+            logger.LogError("Passphrase cannot be empty");
+            return false;
+        }
+
+        age.AddRecipient(new ScryptRecipient(passphrase));
+        return true;
+    }
+
+    /// <summary>
+    /// Configures recipients from command line arguments, recipient files, and identity files.
+    /// </summary>
+    /// <returns>True if successful, false otherwise.</returns>
+    private async Task<bool> ConfigureRecipients(
+        Age age,
+        string[]? recipientFlags,
+        string[]? recipientsFileFlags,
+        string[]? identityFlags,
+        ILogger logger)
+    {
+        // Add recipients from command line arguments
+        if (recipientFlags?.Length > 0)
+        {
+            if (!AddRecipientsFromCommandLine(age, recipientFlags, logger))
+                return false;
+        }
+
+        // Add recipients from recipient files
+        if (recipientsFileFlags?.Length > 0)
+        {
+            if (!await AddRecipientsFromFiles(age, recipientsFileFlags, logger))
+                return false;
+        }
+
+        // Add recipients from identity files
+        if (identityFlags?.Length > 0)
+        {
+            if (!await AddRecipientsFromIdentityFiles(age, identityFlags, logger))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Adds recipients from command line arguments.
+    /// </summary>
+    /// <returns>True if successful, false otherwise.</returns>
+    private bool AddRecipientsFromCommandLine(Age age, string[] recipientFlags, ILogger logger)
+    {
+        foreach (var recipient in recipientFlags)
+        {
+            try
+            {
+                var publicKey = KeyFileUtils.DecodeAgePublicKey(recipient);
+                age.AddRecipient(new X25519Recipient(publicKey));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"Invalid recipient '{recipient}': {ex.Message}");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Adds recipients from recipient files.
+    /// </summary>
+    /// <returns>True if successful, false otherwise.</returns>
+    private async Task<bool> AddRecipientsFromFiles(Age age, string[] recipientsFileFlags, ILogger logger)
+    {
+        foreach (var recipientsFile in recipientsFileFlags)
+        {
+            if (!File.Exists(recipientsFile))
+            {
+                logger.LogError($"Recipients file not found: {recipientsFile}");
+                return false;
+            }
+
+            try
+            {
+                var recipients = KeyFileUtils.ReadRecipientsFile(recipientsFile);
+                foreach (var recipient in recipients)
+                {
+                    var publicKey = KeyFileUtils.DecodeAgePublicKey(recipient);
+                    age.AddRecipient(new X25519Recipient(publicKey));
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"Error reading recipients file '{recipientsFile}': {ex.Message}");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Adds recipients from identity files.
+    /// </summary>
+    /// <returns>True if successful, false otherwise.</returns>
+    private async Task<bool> AddRecipientsFromIdentityFiles(Age age, string[] identityFlags, ILogger logger)
+    {
+        foreach (var identityFile in identityFlags)
+        {
+            if (!File.Exists(identityFile))
+            {
+                logger.LogError($"Identity file not found: {identityFile}");
+                return false;
+            }
+
+            try
+            {
+                var (privateKeyBytes, _) = KeyFileUtils.ParseKeyFileAsBytes(identityFile);
+                var publicKeyBytes = X25519.GetPublicKeyFromPrivateKey(privateKeyBytes);
+                age.AddRecipient(new X25519Recipient(publicKeyBytes));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"Error reading identity file '{identityFile}': {ex.Message}");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Handles the decrypt command.
+    /// </summary>
+    /// <param name="decryptFlag">Flag indicating decryption mode.</param>
+    /// <param name="identityFlags">Identity files to use for decryption.</param>
+    /// <param name="outputFlag">Output file path.</param>
+    /// <param name="inputArg">Input file path.</param>
+    /// <param name="logger">Logger instance.</param>
+    /// <returns>Exit code.</returns>
+    private async Task<int> HandleDecryptAsync(
         bool decryptFlag,
         string[]? identityFlags,
         string? outputFlag,
@@ -331,123 +451,216 @@ Example:
     {
         try
         {
+            // Read input data
             byte[] inputData;
-            if (string.IsNullOrEmpty(inputArg) || inputArg == "-")
+            try
             {
-                using var stdin = Console.OpenStandardInput();
-                using var ms = new MemoryStream();
-                stdin.CopyTo(ms);
-                inputData = ms.ToArray();
+                inputData = await ReadInputDataAsync(inputArg, logger);
             }
-            else
+            catch (Exception ex)
             {
-                // Validate that the input file exists and is not a flag
-                if (inputArg.StartsWith("-"))
-                {
-                    logger.LogError($"Invalid argument: {inputArg}. Did you mean to specify an input file?");
-                    return Task.FromResult(1);
-                }
-
-                if (!File.Exists(inputArg))
-                {
-                    logger.LogError($"Input file not found: {inputArg}");
-                    return Task.FromResult(1);
-                }
-
-                inputData = File.ReadAllBytes(inputArg);
+                logger.LogError(ex.Message);
+                return 1;
             }
+
+            // Create Age instance and configure identities
+            var age = new Age();
 
             // Check if the file is passphrase-encrypted
             var isPassphraseEncrypted = Age.IsPassphraseEncrypted(inputData);
-            
-            var age = new Age();
-            
+
             if (isPassphraseEncrypted)
             {
-                // File is passphrase-encrypted, prompt for passphrase
-                var passphrase = PromptForDecryptionPassphrase(logger);
-                if (string.IsNullOrEmpty(passphrase))
-                {
-                    logger.LogError("Passphrase cannot be empty");
-                    return Task.FromResult(1);
-                }
-                
-                age.AddIdentity(new ScryptIdentity(passphrase));
+                if (!await ConfigurePassphraseDecryption(age, logger))
+                    return 1;
             }
             else
             {
-                // File is not passphrase-encrypted, use identity files
-                if (identityFlags == null || identityFlags.Length == 0)
-                {
-                    logger.LogError("No identities specified. Use -i to specify identity files.");
-                    return Task.FromResult(1);
-                }
-                
-                foreach (var identityFile in identityFlags)
-                {
-                    if (!File.Exists(identityFile))
-                    {
-                        logger.LogError($"Identity file not found: {identityFile}");
-                        return Task.FromResult(1);
-                    }
+                // Validate identity flags
+                if (!ValidateIdentityFlags(identityFlags, logger))
+                    return 1;
 
-                    try
-                    {
-                        var (privateKeyBytes, publicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(identityFile);
-                        age.AddIdentity(new X25519Recipient(publicKeyBytes, privateKeyBytes));
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError($"Error reading identity file '{identityFile}': {ex.Message}");
-                        return Task.FromResult(1);
-                    }
-                }
+                // Add identities from files
+                if (!await AddIdentitiesFromFilesAsync(age, identityFlags!, logger))
+                    return 1;
             }
 
-            if (identityFlags != null)
-                foreach (var identityFile in identityFlags)
-                {
-                    if (!File.Exists(identityFile))
-                    {
-                        logger.LogError($"Identity file not found: {identityFile}");
-                        return Task.FromResult(1);
-                    }
-
-                    try
-                    {
-                        var (privateKeyBytes, publicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(identityFile);
-                        age.AddIdentity(new X25519Recipient(publicKeyBytes, privateKeyBytes));
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError($"Error reading identity file '{identityFile}': {ex.Message}");
-                        return Task.FromResult(1);
-                    }
-                }
-
-            var decryptedData = age.Decrypt(inputData);
-
-            if (string.IsNullOrEmpty(outputFlag) || outputFlag == "-")
+            // Decrypt the data
+            byte[] decryptedData;
+            try
             {
-                Console.WriteLine(decryptedData); // Add newline to prevent shell prompt from appearing on same line
+                decryptedData = age.Decrypt(inputData);
             }
-            else
-                File.WriteAllBytes(outputFlag, decryptedData);
+            catch (Exception ex)
+            {
+                logger.LogError($"Decryption failed: {ex.Message}");
+                return 1;
+            }
 
-            return Task.FromResult(0);
+            // Write the output
+            await WriteOutputDataAsync(decryptedData, outputFlag);
+
+            return 0;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Decryption failed");
-            return Task.FromResult(1);
+            return 1;
         }
     }
 
-    private static string PromptForPassphrase(ILogger logger)
+    /// <summary>
+    /// Validates that identity flags are provided when needed.
+    /// </summary>
+    /// <param name="identityFlags">Identity flags to validate.</param>
+    /// <param name="logger">Logger instance.</param>
+    /// <returns>True if valid, false otherwise.</returns>
+    private bool ValidateIdentityFlags(string[]? identityFlags, ILogger logger)
+    {
+        if (identityFlags == null || identityFlags.Length == 0)
+        {
+            logger.LogError("No identities specified. Use -i to specify identity files.");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Configures passphrase decryption by prompting for a passphrase.
+    /// </summary>
+    /// <param name="age">Age instance to configure.</param>
+    /// <param name="logger">Logger instance.</param>
+    /// <returns>True if successful, false otherwise.</returns>
+    private async Task<bool> ConfigurePassphraseDecryption(Age age, ILogger logger)
+    {
+        var passphrase = PromptForDecryptionPassphrase();
+        if (string.IsNullOrEmpty(passphrase))
+        {
+            logger.LogError("Passphrase cannot be empty");
+            return false;
+        }
+
+        age.AddIdentity(new ScryptIdentity(passphrase));
+        return true;
+    }
+
+    /// <summary>
+    /// Adds identities from identity files to the Age instance.
+    /// </summary>
+    /// <param name="age">The Age instance to add identities to.</param>
+    /// <param name="identityFiles">Array of identity file paths.</param>
+    /// <param name="logger">Logger instance.</param>
+    /// <returns>True if all identities were added successfully, false otherwise.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when age or identityFiles is null.</exception>
+    private async Task<bool> AddIdentitiesFromFilesAsync(Age age, string[] identityFiles, ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(age);
+        ArgumentNullException.ThrowIfNull(identityFiles);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        foreach (var identityFile in identityFiles)
+        {
+            if (string.IsNullOrEmpty(identityFile))
+            {
+                logger.LogError("Identity file path cannot be null or empty");
+                return false;
+            }
+
+            if (!File.Exists(identityFile))
+            {
+                logger.LogError($"Identity file not found: {identityFile}");
+                return false;
+            }
+
+            try
+            {
+                var (privateKeyBytes, publicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(identityFile);
+                age.AddIdentity(new X25519Recipient(publicKeyBytes, privateKeyBytes));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"Error reading identity file '{identityFile}': {ex.Message}");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Reads input data from a file or standard input.
+    /// </summary>
+    /// <param name="inputPath">Path to the input file, or null/"-" for standard input.</param>
+    /// <param name="logger">Logger instance.</param>
+    /// <returns>The read data as a byte array.</returns>
+    /// <exception cref="ArgumentException">Thrown when inputPath starts with "-" but is not "-".</exception>
+    /// <exception cref="FileNotFoundException">Thrown when the input file does not exist.</exception>
+    private async Task<byte[]> ReadInputDataAsync(string? inputPath, ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+
+        // Read from standard input if path is null, empty, or "-"
+        if (string.IsNullOrEmpty(inputPath) || inputPath == "-")
+        {
+            using var stdin = Console.OpenStandardInput();
+            using var ms = new MemoryStream();
+            await stdin.CopyToAsync(ms);
+            return ms.ToArray();
+        }
+
+        // Validate that the input file exists and is not a flag
+        if (inputPath.StartsWith("-", StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"Invalid argument: {inputPath}. Did you mean to specify an input file?");
+        }
+
+        if (!File.Exists(inputPath))
+        {
+            throw new FileNotFoundException($"Input file not found: {inputPath}");
+        }
+
+        return await File.ReadAllBytesAsync(inputPath);
+    }
+
+    /// <summary>
+    /// Writes output data to a file or standard output.
+    /// </summary>
+    /// <param name="data">The data to write.</param>
+    /// <param name="outputPath">Path to the output file, or null/"-" for standard output.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when data is null.</exception>
+    private async Task WriteOutputDataAsync(byte[] data, string? outputPath)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        // Write to standard output if path is null, empty, or "-"
+        if (string.IsNullOrEmpty(outputPath) || outputPath == "-")
+        {
+            await Console.OpenStandardOutput().WriteAsync(data);
+            Console.WriteLine(); // Add newline to prevent shell prompt from appearing on same line
+        }
+        else
+        {
+            // Ensure directory exists
+            var directory = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await File.WriteAllBytesAsync(outputPath, data);
+        }
+    }
+
+    /// <summary>
+    /// Prompts the user for a passphrase for encryption.
+    /// </summary>
+    private string PromptForPassphrase(ILogger logger)
     {
         Console.Write("Enter passphrase (leave empty to autogenerate a secure one): ");
         var passphrase = ReadSecret();
-        
+
         if (string.IsNullOrEmpty(passphrase))
         {
             // Generate a secure passphrase using BIP39 wordlist like age does
@@ -464,265 +677,87 @@ Example:
                 return string.Empty;
             }
         }
-        
+
         return passphrase;
     }
 
-    private static string PromptForDecryptionPassphrase(ILogger logger)
+    /// <summary>
+    /// Prompts the user for a passphrase for decryption.
+    /// </summary>
+    private string PromptForDecryptionPassphrase()
     {
         Console.Write("Enter passphrase: ");
         return ReadSecret();
     }
 
-    private static string GenerateSecurePassphrase()
+    /// <summary>
+    /// Generates a secure passphrase using the BIP39 wordlist.
+    /// </summary>
+    /// <returns>A secure passphrase consisting of 10 random words from the BIP39 wordlist.</returns>
+    private string GenerateSecurePassphrase()
     {
-        var random = new Random();
-        var words = new List<string>();
-        
+        using var rng = RandomNumberGenerator.Create();
+        var words = new List<string>(10);
+        var buffer = new byte[4]; // 4 bytes = 32 bits, enough for selecting from 2048 words
+
         // Generate 10 random words from the BIP39 wordlist (like age does)
         for (int i = 0; i < 10; i++)
         {
-            var index = random.Next(Bip39Wordlist.Length);
-            words.Add(Bip39Wordlist[index]);
+            rng.GetBytes(buffer);
+            var value = BitConverter.ToUInt32(buffer, 0) % (uint)Bip39Wordlist.Length;
+            words.Add(Bip39Wordlist.GetWord((int)value));
         }
-        
+
         return string.Join("-", words);
     }
 
-    // BIP39 wordlist (2048 words) - same as used by age
-    private static readonly string[] Bip39Wordlist = {
-        "abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract", "absurd", "abuse",
-        "access", "accident", "account", "accuse", "achieve", "acid", "acoustic", "acquire", "across", "act",
-        "action", "actor", "actress", "actual", "adapt", "add", "addict", "address", "adjust", "admit",
-        "adult", "advance", "advice", "aerobic", "affair", "afford", "afraid", "again", "age", "agent",
-        "agree", "ahead", "aim", "air", "airport", "aisle", "alarm", "album", "alcohol", "alert",
-        "alien", "all", "alley", "allow", "almost", "alone", "alpha", "already", "also", "alter",
-        "always", "amateur", "amazing", "among", "amount", "amused", "analyst", "anchor", "ancient", "anger",
-        "angle", "angry", "animal", "ankle", "announce", "annual", "another", "answer", "antenna", "antique",
-        "anxiety", "any", "apart", "apology", "appear", "apple", "approve", "april", "arch", "arctic",
-        "area", "arena", "argue", "arm", "armed", "armor", "army", "around", "arrange", "arrest",
-        "arrive", "arrow", "art", "artefact", "artist", "artwork", "ask", "aspect", "assault", "asset",
-        "assist", "assume", "asthma", "athlete", "atom", "attack", "attend", "attitude", "attract", "auction",
-        "audit", "august", "aunt", "author", "auto", "autumn", "average", "avocado", "avoid", "awake",
-        "aware", "away", "awesome", "awful", "awkward", "axis", "baby", "bachelor", "bacon", "badge",
-        "bag", "balance", "balcony", "ball", "bamboo", "banana", "banner", "bar", "barely", "bargain",
-        "barrel", "base", "basic", "basket", "battle", "beach", "bean", "beauty", "because", "become",
-        "beef", "before", "begin", "behave", "behind", "believe", "below", "belt", "bench", "benefit",
-        "best", "betray", "better", "between", "beyond", "bicycle", "bid", "bike", "bind", "biology",
-        "bird", "birth", "bitter", "black", "blade", "blame", "blanket", "blast", "bleak", "bless",
-        "blind", "blood", "blossom", "blouse", "blue", "blur", "blush", "board", "boat", "body",
-        "boil", "bomb", "bone", "bonus", "book", "boost", "border", "boring", "borrow", "boss",
-        "bottom", "bounce", "box", "boy", "bracket", "brain", "brand", "brass", "brave", "bread",
-        "breeze", "brick", "bridge", "brief", "bright", "bring", "brisk", "broccoli", "broken", "bronze",
-        "broom", "brother", "brown", "brush", "bubble", "buddy", "budget", "buffalo", "build", "bulb",
-        "bulk", "bullet", "bundle", "bunker", "burden", "burger", "burst", "bus", "business", "busy",
-        "butter", "buyer", "buzz", "cabbage", "cabin", "cable", "cactus", "cage", "cake", "call",
-        "calm", "camera", "camp", "can", "canal", "cancel", "candy", "cannon", "canoe", "canvas",
-        "canyon", "capable", "capital", "captain", "car", "carbon", "card", "cargo", "carpet", "carry",
-        "cart", "case", "cash", "casino", "castle", "casual", "cat", "catalog", "catch", "category",
-        "cattle", "caught", "cause", "caution", "cave", "ceiling", "celery", "cement", "census", "century",
-        "cereal", "certain", "chair", "chalk", "champion", "change", "chaos", "chapter", "charge", "chase",
-        "chat", "cheap", "check", "cheese", "chef", "cherry", "chest", "chicken", "chief", "child",
-        "chimney", "choice", "choose", "chronic", "chuckle", "chunk", "churn", "cigar", "cinnamon", "circle",
-        "citizen", "city", "civil", "claim", "clap", "clarify", "claw", "clay", "clean", "clerk",
-        "clever", "click", "client", "cliff", "climb", "clinic", "clip", "clock", "clog", "close",
-        "cloth", "cloud", "clown", "club", "clump", "cluster", "clutch", "coach", "coast", "coconut",
-        "code", "coffee", "coil", "coin", "collect", "color", "column", "combine", "come", "comfort",
-        "comic", "common", "company", "concert", "conduct", "confirm", "congress", "connect", "consider", "control",
-        "convince", "cook", "cool", "copper", "copy", "coral", "core", "corn", "correct", "cost",
-        "cotton", "couch", "country", "couple", "course", "cousin", "cover", "coyote", "crack", "cradle",
-        "craft", "cram", "crane", "crash", "crater", "crawl", "crazy", "cream", "credit", "creek",
-        "crew", "cricket", "crime", "crisp", "critic", "crop", "cross", "crouch", "crowd", "crucial",
-        "cruel", "cruise", "crumble", "crunch", "crush", "cry", "crystal", "cube", "culture", "cup",
-        "cupboard", "curious", "current", "curtain", "curve", "cushion", "custom", "cute", "cycle", "dad",
-        "damage", "damp", "dance", "danger", "daring", "dash", "daughter", "dawn", "day", "deal",
-        "debate", "debris", "decade", "december", "decide", "decline", "decorate", "decrease", "deer", "defense",
-        "define", "defy", "degree", "delay", "deliver", "demand", "demise", "denial", "dentist", "deny",
-        "depart", "depend", "deposit", "depth", "deputy", "derive", "describe", "desert", "design", "desk",
-        "despair", "destroy", "detail", "detect", "develop", "device", "devote", "diagram", "dial", "diamond",
-        "diary", "dice", "diesel", "diet", "differ", "digital", "dignity", "dilemma", "dinner", "dinosaur",
-        "direct", "dirt", "disagree", "discover", "disease", "dish", "dismiss", "disorder", "display", "distance",
-        "divert", "divide", "divorce", "dizzy", "doctor", "document", "dog", "doll", "dolphin", "domain",
-        "donate", "donkey", "donor", "door", "dose", "double", "dove", "draft", "dragon", "drama",
-        "drastic", "draw", "dream", "dress", "drift", "drill", "drink", "drip", "drive", "drop",
-        "drum", "dry", "duck", "dumb", "dune", "during", "dust", "dutch", "duty", "dwarf",
-        "dynamic", "eager", "eagle", "early", "earn", "earth", "easily", "east", "easy", "echo",
-        "ecology", "economy", "edge", "edit", "educate", "effort", "egg", "eight", "either", "elbow",
-        "elder", "electric", "elegant", "element", "elephant", "elevator", "elite", "else", "embark", "embody",
-        "embrace", "emerge", "emotion", "employ", "empower", "empty", "enable", "enact", "end", "endless",
-        "endorse", "enemy", "energy", "enforce", "engage", "engine", "enhance", "enjoy", "enlist", "enough",
-        "enrich", "enroll", "ensure", "enter", "entire", "entry", "envelope", "episode", "equal", "equip",
-        "era", "erase", "erode", "erosion", "error", "erupt", "escape", "essay", "essence", "estate",
-        "eternal", "ethics", "evidence", "evil", "evoke", "evolve", "exact", "example", "excess", "exchange",
-        "excite", "exclude", "excuse", "execute", "exercise", "exhaust", "exhibit", "exile", "exist", "exit",
-        "exotic", "expand", "expect", "expire", "explain", "expose", "express", "extend", "extra", "eye",
-        "eyebrow", "fabric", "face", "faculty", "fade", "faint", "faith", "fall", "false", "fame",
-        "family", "famous", "fan", "fancy", "fantasy", "farm", "fashion", "fat", "fatal", "father",
-        "fatigue", "fault", "favorite", "feature", "february", "federal", "fee", "feed", "feel", "female",
-        "fence", "festival", "fetch", "fever", "few", "fiber", "fiction", "field", "figure", "file",
-        "film", "filter", "final", "find", "fine", "finger", "finish", "fire", "firm", "first",
-        "fiscal", "fish", "fit", "fitness", "fix", "flag", "flame", "flash", "flat", "flavor",
-        "flee", "flight", "flip", "float", "flock", "floor", "flower", "fluid", "flush", "fly",
-        "foam", "focus", "fog", "foil", "fold", "follow", "food", "foot", "force", "forest",
-        "forget", "fork", "fortune", "forum", "forward", "fossil", "foster", "found", "fox", "fragile",
-        "frame", "frequent", "fresh", "friend", "fringe", "frog", "front", "frost", "frown", "frozen",
-        "fruit", "fuel", "fun", "funny", "furnace", "fury", "future", "gadget", "gain", "galaxy",
-        "gallery", "game", "gap", "garage", "garbage", "garden", "garlic", "garment", "gas", "gasp",
-        "gate", "gather", "gauge", "gaze", "general", "genius", "genre", "gentle", "genuine", "gesture",
-        "ghost", "giant", "gift", "giggle", "ginger", "giraffe", "girl", "give", "glad", "glance",
-        "glare", "glass", "glide", "glimpse", "globe", "gloom", "glory", "glove", "glow", "glue",
-        "goat", "goddess", "gold", "good", "goose", "gorilla", "gospel", "gossip", "govern", "gown",
-        "grab", "grace", "grain", "grant", "grape", "grass", "gravity", "great", "green", "grid",
-        "grief", "grit", "grocery", "group", "grow", "grunt", "guard", "guess", "guide", "guilt",
-        "guitar", "gun", "gym", "habit", "hair", "half", "hammer", "hamster", "hand", "happy", "harbor",
-        "hard", "harsh", "harvest", "hat", "have", "hawk", "hazard", "head", "health", "heart",
-        "heavy", "hedgehog", "height", "hello", "helmet", "help", "hen", "hero", "hidden", "high",
-        "hill", "hint", "hip", "hire", "history", "hobby", "hockey", "hold", "hole", "holiday",
-        "hollow", "home", "honey", "hood", "hope", "horn", "horror", "horse", "hospital", "host", "hotel",
-        "hour", "hover", "hub", "huge", "human", "humble", "humor", "hundred", "hungry", "hunt",
-        "hurdle", "hurry", "hurt", "husband", "hybrid", "ice", "icon", "idea", "identify", "idle",
-        "ignore", "ill", "illegal", "illness", "image", "imitate", "immense", "immune", "impact", "impose",
-        "improve", "impulse", "inch", "include", "income", "increase", "index", "indicate", "indoor", "industry",
-        "infant", "inflict", "inform", "inhale", "inherit", "initial", "inject", "injury", "inmate", "inner",
-        "innocent", "input", "inquiry", "insane", "insect", "inside", "inspire", "install", "intact", "interest",
-        "into", "invest", "invite", "involve", "iron", "island", "isolate", "issue", "item", "ivory",
-        "jacket", "jaguar", "jar", "jazz", "jealous", "jeans", "jelly", "jewel", "job", "join",
-        "joke", "journey", "joy", "judge", "juice", "jump", "jungle", "junior", "junk", "just",
-        "kangaroo", "keen", "keep", "ketchup", "key", "kick", "kid", "kidney", "kind", "kingdom",
-        "kiss", "kit", "kitchen", "kite", "kitten", "kiwi", "knee", "knife", "knock", "know",
-        "lab", "label", "labor", "ladder", "lady", "lake", "lamp", "language", "laptop", "large",
-        "later", "latin", "laugh", "laundry", "lava", "law", "lawn", "lawsuit", "layer", "lazy",
-        "leader", "leaf", "learn", "leave", "lecture", "left", "leg", "legal", "legend", "leisure",
-        "lemon", "lend", "length", "lens", "leopard", "lesson", "letter", "level", "liar", "liberty",
-        "library", "license", "life", "lift", "light", "like", "limb", "limit", "link", "lion",
-        "liquid", "list", "little", "live", "lizard", "load", "loan", "lobster", "local", "lock",
-        "logic", "lonely", "long", "loop", "lottery", "loud", "lounge", "love", "loyal", "lucky",
-        "luggage", "lumber", "lunar", "lunch", "luxury", "lyrics", "machine", "mad", "magic", "magnet",
-        "maid", "mail", "main", "major", "make", "mammal", "man", "manage", "mandate", "mango",
-        "mansion", "manual", "maple", "marble", "march", "margin", "marine", "market", "marriage", "mask",
-        "mass", "master", "match", "material", "math", "matrix", "matter", "maximum", "maze", "meadow",
-        "mean", "measure", "meat", "mechanic", "medal", "media", "melody", "melt", "member", "memory",
-        "mention", "menu", "mercy", "merge", "merit", "merry", "mesh", "message", "metal", "method",
-        "middle", "midnight", "milk", "million", "mimic", "mind", "minimum", "minor", "minute", "miracle",
-        "mirror", "misery", "miss", "mistake", "mix", "mixed", "mixture", "mobile", "model", "modify",
-        "mom", "moment", "monitor", "monkey", "monster", "month", "moon", "moral", "more", "morning",
-        "mosquito", "mother", "motion", "motor", "mountain", "mouse", "move", "movie", "much", "muffin",
-        "mule", "multiply", "muscle", "museum", "mushroom", "music", "must", "mutual", "myself", "mystery",
-        "myth", "naive", "name", "napkin", "narrow", "nasty", "nation", "nature", "near", "neck",
-        "need", "negative", "neglect", "neither", "nephew", "nerve", "nest", "net", "network", "neutral",
-        "never", "news", "next", "nice", "night", "noble", "noise", "nominee", "noodle", "normal",
-        "north", "nose", "notable", "note", "nothing", "notice", "novel", "now", "nuclear", "number",
-        "nurse", "nut", "oak", "obey", "object", "oblige", "obscure", "observe", "obtain", "obvious",
-        "occur", "ocean", "october", "odor", "off", "offer", "office", "often", "oil", "okay",
-        "old", "olive", "olympic", "omit", "once", "one", "onion", "online", "only", "open",
-        "opera", "opinion", "oppose", "option", "orange", "orbit", "orchard", "order", "ordinary", "organ",
-        "orient", "original", "orphan", "ostrich", "other", "outdoor", "outer", "output", "outside", "oval",
-        "oven", "over", "own", "owner", "oxygen", "oyster", "ozone", "pact", "paddle", "page",
-        "pair", "palace", "palm", "panda", "panel", "panic", "panther", "paper", "parade", "parent",
-        "park", "parrot", "party", "pass", "patch", "path", "patient", "patrol", "pattern", "pause",
-        "pave", "payment", "peace", "peanut", "pear", "peasant", "pelican", "pen", "penalty", "pencil",
-        "people", "pepper", "perfect", "permit", "person", "pet", "phone", "photo", "phrase", "physical",
-        "piano", "picnic", "picture", "piece", "pig", "pigeon", "pill", "pilot", "pink", "pioneer",
-        "pipe", "pistol", "pitch", "pizza", "place", "planet", "plastic", "plate", "play", "please",
-        "pledge", "pluck", "plug", "plunge", "poem", "poet", "point", "polar", "pole", "police",
-        "pond", "pony", "pool", "popular", "portion", "position", "possible", "post", "potato", "pottery",
-        "poverty", "powder", "power", "practice", "praise", "predict", "prefer", "prepare", "present", "pretty",
-        "prevent", "price", "pride", "primary", "print", "priority", "prison", "private", "prize", "problem",
-        "process", "produce", "profit", "program", "project", "promote", "proof", "property", "prosper", "protect",
-        "proud", "provide", "public", "pudding", "pull", "pulp", "pulse", "pumpkin", "punch", "pupil",
-        "puppy", "purchase", "purity", "purpose", "purse", "push", "put", "puzzle", "pyramid", "quality",
-        "quantum", "quarter", "question", "quick", "quit", "quiz", "quote", "rabbit", "raccoon", "race",
-        "rack", "radar", "radio", "rail", "rain", "raise", "rally", "ramp", "ranch", "random",
-        "range", "rapid", "rare", "rate", "rather", "raven", "raw", "razor", "ready", "real",
-        "reason", "rebel", "rebuild", "recall", "receive", "recipe", "record", "recycle", "reduce", "reflect",
-        "reform", "refuse", "region", "regret", "regular", "reject", "relax", "release", "relief", "rely",
-        "remain", "remember", "remind", "remove", "render", "renew", "rent", "reopen", "repair", "repeat",
-        "replace", "report", "require", "rescue", "resemble", "resist", "resource", "response", "result", "retire",
-        "retreat", "return", "reunion", "reveal", "review", "reward", "rhythm", "rib", "ribbon", "rice",
-        "rich", "ride", "ridge", "rifle", "right", "rigid", "ring", "riot", "ripple", "risk",
-        "ritual", "rival", "river", "road", "roast", "robot", "robust", "rocket", "romance", "roof",
-        "rookie", "room", "rose", "rotate", "rough", "round", "route", "royal", "rubber", "rude",
-        "rug", "rule", "run", "runway", "rural", "sad", "saddle", "sadness", "safe", "sail",
-        "salad", "salmon", "salon", "salt", "salute", "same", "sample", "sand", "satisfy", "satoshi",
-        "sauce", "sausage", "save", "say", "scale", "scan", "scare", "scatter", "scene", "scheme",
-        "school", "science", "scissors", "scorpion", "scout", "scrap", "screen", "script", "scrub", "sea",
-        "search", "season", "seat", "second", "secret", "section", "security", "seed", "seek", "segment",
-        "select", "sell", "seminar", "senior", "sense", "sentence", "series", "service", "session", "settle",
-        "setup", "seven", "shadow", "shaft", "shallow", "share", "shed", "shell", "sheriff", "shield",
-        "shift", "shine", "ship", "shiver", "shock", "shoe", "shoot", "shop", "short", "shoulder",
-        "shove", "shrimp", "shrug", "shuffle", "shy", "sibling", "sick", "side", "siege", "sight",
-        "sign", "silent", "silk", "silly", "silver", "similar", "simple", "since", "sing", "siren",
-        "sister", "situate", "six", "size", "skate", "sketch", "ski", "skill", "skin", "skirt",
-        "skull", "slab", "slam", "sleep", "slender", "slice", "slide", "slight", "slim", "slogan",
-        "slot", "slow", "slush", "small", "smart", "smile", "smoke", "smooth", "snack", "snake",
-        "snap", "sniff", "snow", "soap", "soccer", "social", "sock", "soda", "soft", "solar",
-        "soldier", "solid", "solution", "solve", "someone", "song", "soon", "sorry", "sort", "soul",
-        "sound", "soup", "source", "south", "space", "spare", "spatial", "spawn", "speak", "special",
-        "speed", "spell", "spend", "sphere", "spice", "spider", "spike", "spin", "spirit", "split",
-        "spoil", "sponsor", "spoon", "sport", "spot", "spray", "spread", "spring", "spy", "square",
-        "squeeze", "squirrel", "stable", "stadium", "staff", "stage", "stairs", "stamp", "stand", "start",
-        "state", "stay", "steak", "steel", "stem", "step", "stereo", "stick", "still", "sting",
-        "stock", "stomach", "stone", "stool", "story", "stove", "strategy", "street", "strike", "strong",
-        "struggle", "student", "stuff", "stumble", "style", "subject", "submit", "subway", "success", "such",
-        "sudden", "suffer", "sugar", "suggest", "suit", "summer", "sun", "sunny", "sunset", "super",
-        "supply", "supreme", "sure", "surface", "surge", "surprise", "surround", "survey", "suspect", "sustain",
-        "swallow", "swamp", "swap", "swarm", "swear", "sweet", "swift", "swim", "swing", "switch",
-        "sword", "symbol", "symptom", "syrup", "system", "table", "tackle", "tag", "tail", "talent",
-        "talk", "tank", "tape", "target", "task", "taste", "tattoo", "taxi", "teach", "team",
-        "tell", "ten", "tenant", "tennis", "tent", "term", "test", "text", "thank", "that",
-        "theme", "then", "theory", "there", "they", "thing", "this", "thought", "three", "thrive",
-        "throw", "thumb", "thunder", "ticket", "tide", "tiger", "tilt", "timber", "time", "tiny",
-        "tip", "tired", "tissue", "title", "toast", "tobacco", "today", "toddler", "toe", "together",
-        "toilet", "token", "tomato", "tomorrow", "tone", "tongue", "tonight", "tool", "tooth", "top",
-        "topic", "topple", "torch", "tornado", "tortoise", "toss", "total", "tourist", "toward", "tower",
-        "town", "toy", "track", "trade", "traffic", "tragic", "train", "transfer", "trap", "trash",
-        "travel", "tray", "treat", "tree", "trend", "trial", "tribe", "trick", "trigger", "trim",
-        "trip", "trophy", "trouble", "truck", "true", "truly", "trumpet", "trust", "truth", "try",
-        "tube", "tuition", "tumble", "tuna", "tunnel", "turkey", "turn", "turtle", "twelve", "twenty",
-        "twice", "twin", "twist", "two", "type", "typical", "ugly", "umbrella", "unable", "unaware",
-        "uncle", "uncover", "under", "undo", "unfair", "unfold", "unhappy", "uniform", "unique", "unit",
-        "universe", "unknown", "unlock", "until", "unusual", "unveil", "update", "upgrade", "uphold", "upon",
-        "upper", "upset", "urban", "urge", "usage", "use", "used", "useful", "useless", "usual",
-        "utility", "vacant", "vacuum", "vague", "valid", "valley", "valve", "van", "vanish", "vapor",
-        "various", "vast", "vault", "vehicle", "velvet", "vendor", "venture", "venue", "verb", "verify",
-        "version", "very", "vessel", "veteran", "viable", "vibrant", "vicious", "victory", "video", "view",
-        "village", "vintage", "violin", "virtual", "virus", "visa", "visit", "visual", "vital", "vivid",
-        "vocal", "voice", "void", "volcano", "volume", "vote", "voyage", "wage", "wagon", "wait",
-        "walk", "wall", "walnut", "want", "warfare", "warm", "warrior", "wash", "wasp", "waste",
-        "water", "wave", "way", "wealth", "weapon", "wear", "weasel", "weather", "web", "wedding",
-        "weekend", "weird", "welcome", "west", "wet", "whale", "what", "wheat", "wheel", "when",
-        "where", "whip", "whisper", "wide", "width", "wife", "wild", "will", "win", "window",
-        "wine", "wing", "wink", "winner", "winter", "wire", "wisdom", "wise", "wish", "witness",
-        "wolf", "woman", "wonder", "wood", "wool", "word", "work", "world", "worry", "worth",
-        "wrap", "wreck", "wrestle", "wrist", "write", "wrong", "yard", "year", "yellow", "you",
-        "young", "youth",         "zebra", "zero", "zone", "zoo"
-    };
-
-    private static string ReadSecret()
+    /// <summary>
+    /// Reads a secret (password/passphrase) from the console without displaying the input.
+    /// </summary>
+    /// <returns>The secret entered by the user.</returns>
+    private string ReadSecret()
     {
-        var passphrase = new StringBuilder();
+        var passphrase = new StringBuilder(capacity: 32);
+
         while (true)
         {
-            var key = Console.ReadKey(true);
-            if (key.Key == ConsoleKey.Enter)
+            var keyInfo = Console.ReadKey(intercept: true);
+
+            switch (keyInfo.Key)
             {
-                Console.WriteLine();
-                break;
-            }
-            else if (key.Key == ConsoleKey.Backspace)
-            {
-                if (passphrase.Length > 0)
-                {
-                    passphrase.Length--;
-                    Console.Write("\b \b");
-                }
-            }
-            else
-            {
-                passphrase.Append(key.KeyChar);
-                Console.Write("*");
+                case ConsoleKey.Enter:
+                    Console.WriteLine();
+                    return passphrase.ToString();
+
+                case ConsoleKey.Backspace:
+                    if (passphrase.Length > 0)
+                    {
+                        passphrase.Remove(passphrase.Length - 1, 1);
+                        Console.Write("\b \b");
+                    }
+
+                    break;
+
+                case ConsoleKey.Escape:
+                    // Clear the entire input
+                    while (passphrase.Length > 0)
+                    {
+                        passphrase.Remove(passphrase.Length - 1, 1);
+                        Console.Write("\b \b");
+                    }
+
+                    break;
+
+                default:
+                    // Only append printable characters
+                    if (!char.IsControl(keyInfo.KeyChar))
+                    {
+                        passphrase.Append(keyInfo.KeyChar);
+                        Console.Write("*");
+                    }
+
+                    break;
             }
         }
-        return passphrase.ToString();
     }
 }

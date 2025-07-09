@@ -4,6 +4,9 @@ namespace DotAge.Tests;
 
 public class DotAgeKeyGenCompatibilityTests : IDisposable
 {
+    private static readonly DotAge.Cli.Program _cli = new DotAge.Cli.Program();
+    private static readonly DotAge.KeyGen.Program _keyGen = new DotAge.KeyGen.Program();
+    
     private readonly string _tempDir;
 
     public DotAgeKeyGenCompatibilityTests()
@@ -19,7 +22,7 @@ public class DotAgeKeyGenCompatibilityTests : IDisposable
     [Fact]
     public void GenerateKeyPairContent_MatchesFormat()
     {
-        var output = Program.GenerateKeyPairContent();
+        var output = _keyGen.GenerateKeyPairContent();
         var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         Assert.True(lines.Length == 3, "Output should have 3 lines");
         Assert.StartsWith("# created: ", lines[0]);
@@ -31,7 +34,7 @@ public class DotAgeKeyGenCompatibilityTests : IDisposable
     [Fact]
     public void GenerateKeyPairData_MatchesFormat()
     {
-        var (priv, pub, privStr, pubStr) = Program.GenerateKeyPairData();
+        var (priv, pub, privStr, pubStr) = _keyGen.GenerateKeyPairData();
         Assert.Equal(32, priv.Length);
         Assert.Equal(32, pub.Length);
         Assert.StartsWith("AGE-SECRET-KEY-", privStr);
@@ -43,11 +46,11 @@ public class DotAgeKeyGenCompatibilityTests : IDisposable
     {
         var file = Path.Combine(_tempDir, "key.txt");
         Assert.False(File.Exists(file));
-        Program.GenerateKeyPair(file);
+        _keyGen.GenerateKeyPair(file);
         Assert.True(File.Exists(file));
         var content1 = File.ReadAllText(file);
         // Try to overwrite
-        Program.GenerateKeyPair(file);
+        _keyGen.GenerateKeyPair(file);
         var content2 = File.ReadAllText(file);
         // File should be overwritten, so content may differ
         Assert.NotNull(content2);
@@ -63,7 +66,7 @@ public class DotAgeKeyGenCompatibilityTests : IDisposable
         // Run age-keygen
         await TestUtils.RunCommandAsync("age-keygen", $"-o {ageKeyFile}");
         // Run dotage-keygen
-        Program.GenerateKeyPair(dotageKeyFile);
+        _keyGen.GenerateKeyPair(dotageKeyFile);
         // Compare file formats
         var ageLines = File.ReadAllLines(ageKeyFile);
         var dotageLines = File.ReadAllLines(dotageKeyFile);
@@ -83,7 +86,7 @@ public class DotAgeKeyGenCompatibilityTests : IDisposable
     public void OutputToStdout_MatchesFormat()
     {
         // Simulate writing to stdout by capturing the output of GenerateKeyPairContent
-        var output = Program.GenerateKeyPairContent();
+        var output = _keyGen.GenerateKeyPairContent();
         Assert.Contains("# created: ", output);
         Assert.Contains("# public key: age1", output);
         Assert.Contains("AGE-SECRET-KEY-", output);
@@ -93,7 +96,7 @@ public class DotAgeKeyGenCompatibilityTests : IDisposable
     public void OutputFileOption_WritesFile()
     {
         var file = Path.Combine(_tempDir, "cli-key.txt");
-        var rc = Program.GenerateKeyPair(file);
+        var rc = _keyGen.GenerateKeyPair(file);
         Assert.Equal(0, rc);
         Assert.True(File.Exists(file));
         var content = File.ReadAllText(file);

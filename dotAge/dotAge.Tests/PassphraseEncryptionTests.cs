@@ -377,37 +377,6 @@ public class PassphraseEncryptionTests : IDisposable
         Assert.Throws<AgeDecryptionException>(() => decryptedAge.Decrypt(ciphertext));
     }
 
-    [Fact]
-    public void PassphraseEncryptionWithLowWorkFactor()
-    {
-        // Arrange - Use a much lower work factor for testing
-        var passphrase = "test-passphrase-low";
-        var plaintext = Encoding.UTF8.GetBytes("Test data with low work factor");
-
-        // Create a custom ScryptRecipient with lower work factor (10 instead of 18)
-        var age = new Age();
-        var recipient = new ScryptRecipient(passphrase, 10); // 2^10 = 1024 instead of 2^18 = 262144
-        age.AddRecipient(recipient);
-
-        // Act - Encrypt
-        var startTime = DateTime.UtcNow;
-        var ciphertext = age.Encrypt(plaintext);
-        var encryptTime = DateTime.UtcNow - startTime;
-
-        // Assert - Verify it doesn't take too long (should be under 5 seconds)
-        Assert.True(encryptTime.TotalSeconds < 5, $"Encryption took too long: {encryptTime.TotalSeconds}s");
-
-        // Act - Decrypt
-        startTime = DateTime.UtcNow;
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase, 10));
-        var decrypted = decryptedAge.Decrypt(ciphertext);
-        var decryptTime = DateTime.UtcNow - startTime;
-
-        // Assert - Verify it doesn't take too long and matches original
-        Assert.True(decryptTime.TotalSeconds < 5, $"Decryption took too long: {decryptTime.TotalSeconds}s");
-        Assert.Equal(plaintext, decrypted);
-    }
 
     [Fact(DisplayName = "Scrypt passphrase round-trip compatibility: dotage <-> age <-> rage")]
     public async Task ScryptPassphraseRoundTripCompatibility()

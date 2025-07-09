@@ -29,7 +29,9 @@ public static class Scrypt
         if (keyLength <= 0)
             throw new AgeCryptoException("Key length must be positive");
 
-        var passwordBytes = Encoding.UTF8.GetBytes(password);
+        // Normalize password to NFC (per age/rage spec)
+        var normalizedPassword = password.Normalize(System.Text.NormalizationForm.FormC);
+        var passwordBytes = Encoding.UTF8.GetBytes(normalizedPassword);
         // workFactor is already the log2 value (e.g., 18), so calculate N = 2^workFactor
         var n = 1 << workFactor;
 

@@ -13,6 +13,9 @@ namespace DotAge.Tests;
 /// </summary>
 public class AgeCompatibilityTests : IDisposable
 {
+    private static readonly DotAge.Cli.Program _cli = new DotAge.Cli.Program();
+    private static readonly DotAge.KeyGen.Program _keyGen = new DotAge.KeyGen.Program();
+    
     private readonly ILogger _logger;
     private readonly string _tempDir;
 
@@ -154,7 +157,7 @@ public class AgeCompatibilityTests : IDisposable
 
         // Generate a key pair using dotage-keygen programmatically
         var dotageKeyFile = Path.Combine(_tempDir, "test4_key.txt");
-        var keyContent = Program.GenerateKeyPairContent();
+        var keyContent = _keyGen.GenerateKeyPairContent();
         File.WriteAllText(dotageKeyFile, keyContent);
 
         // Extract keys from the key file
