@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Utils;
 
@@ -8,6 +10,8 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class KeyFileUtils
 {
+    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(KeyFileUtils));
+
     private static readonly Regex AgeSecretKeyRegex =
         new(@"^AGE-SECRET-KEY-1[A-Z0-9]+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -27,6 +31,8 @@ public static class KeyFileUtils
         if (!File.Exists(keyFilePath))
             throw new AgeKeyException($"Key file not found: {keyFilePath}");
 
+        Logger.LogTrace("Parsing key file: {KeyFilePath}", keyFilePath);
+
         var keyFileContent = File.ReadAllText(keyFilePath);
         var lines = keyFileContent.Split('\n');
 
@@ -43,40 +49,65 @@ public static class KeyFileUtils
             if (trimmedLine.StartsWith("# public key: "))
             {
                 var publicKey = trimmedLine.Substring("# public key: ".Length).Trim();
-                if (AgePublicKeyRegex.IsMatch(publicKey)) publicKeyLine = publicKey;
+                if (AgePublicKeyRegex.IsMatch(publicKey)) 
+                {
+                    publicKeyLine = publicKey;
+                    Logger.LogTrace("Found public key in comment: {PublicKey}", publicKey);
+                }
             }
 
             // Skip empty lines and comment lines (matching Go/Rust behavior)
-            if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith("#")) continue;
+            if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith("#")) 
+            {
+                continue;
+            }
 
             // Check for private key (AGE-SECRET-KEY format)
             if (trimmedLine.StartsWith("AGE-SECRET-KEY-", StringComparison.OrdinalIgnoreCase))
             {
-                            if (privateKeyLine != null)
-                throw new AgeKeyException("Multiple private keys found in key file");
-            privateKeyLine = trimmedLine;
-        }
-        // Check for public key (age1... format) - standalone line
-        else if (trimmedLine.StartsWith("age1"))
-        {
-            if (AgePublicKeyRegex.IsMatch(trimmedLine))
-            {
-                if (publicKeyLine != null)
-                    throw new AgeKeyException("Multiple public keys found in key file");
-                publicKeyLine = trimmedLine;
+                if (privateKeyLine != null)
+                {
+                    Logger.LogTrace("Multiple private keys found in key file");
+                    throw new AgeKeyException("Multiple private keys found in key file");
+                }
+                privateKeyLine = trimmedLine;
+                Logger.LogTrace("Found private key: {PrivateKey}", privateKeyLine);
             }
-        }
-        else
-        {
-            throw new AgeKeyException($"Invalid key format on line {i + 1}");
-        }
+            // Check for public key (age1... format) - standalone line
+            else if (trimmedLine.StartsWith("age1"))
+            {
+                if (AgePublicKeyRegex.IsMatch(trimmedLine))
+                {
+                    if (publicKeyLine != null)
+                    {
+                        Logger.LogTrace("Multiple public keys found in key file");
+                        throw new AgeKeyException("Multiple public keys found in key file");
+                    }
+                    publicKeyLine = trimmedLine;
+                    Logger.LogTrace("Found public key: {PublicKey}", publicKeyLine);
+                }
+            }
+            else
+            {
+                Logger.LogTrace("Invalid key format on line {LineNumber}: {Line}", i + 1, trimmedLine);
+                throw new AgeKeyException($"Invalid key format on line {i + 1}");
+            }
         }
 
         if (privateKeyLine == null)
+        {
+            Logger.LogTrace("Private key not found in the key file");
             throw new AgeKeyException("Private key not found in the key file.");
+        }
 
         if (publicKeyLine == null)
+        {
+            Logger.LogTrace("Public key not found in the key file");
             throw new AgeKeyException("Public key not found in the key file.");
+        }
+
+        Logger.LogTrace("Successfully parsed key file - Private: {PrivateKey}, Public: {PublicKey}", 
+            privateKeyLine, publicKeyLine);
 
         return (privateKeyLine, publicKeyLine);
     }
@@ -88,9 +119,12 @@ public static class KeyFileUtils
     /// <returns>A tuple containing the private key and public key as byte arrays.</returns>
     public static (byte[] privateKey, byte[] publicKey) ParseKeyFileAsBytes(string keyFilePath)
     {
+        Logger.LogTrace("Parsing key file as bytes: {KeyFilePath}", keyFilePath);
+
         var (privateKeyLine, publicKeyLine) = ParseKeyFile(keyFilePath);
         var privateKey = DecodeAgeSecretKey(privateKeyLine);
         var publicKey = DecodeAgePublicKey(publicKeyLine);
+
         return (privateKey, publicKey);
     }
 
@@ -100,16 +134,33 @@ public static class KeyFileUtils
     public static byte[] DecodeAgeSecretKey(string privateKeyLine)
     {
         if (privateKeyLine == null) throw new ArgumentNullException(nameof(privateKeyLine));
+
         var m = AgeSecretKeyRegex.Match(privateKeyLine);
-        if (!m.Success) throw new AgeKeyException("Invalid AGE-SECRET-KEY format");
+        if (!m.Success)
+        {
+            Logger.LogTrace("Invalid AGE-SECRET-KEY format");
+            throw new AgeKeyException("Invalid AGE-SECRET-KEY format");
+        }
+
         var bech32 = privateKeyLine.Trim();
         var (hrp, data) = Bech32.Decode(bech32);
+
+        Logger.LogTrace("Bech32 decoded - HRP: {Hrp}, Data length: {DataLength}", hrp, data.Length);
+
         // Accept both uppercase and lowercase HRP for secret keys
         if (!string.Equals(hrp, "AGE-SECRET-KEY-", StringComparison.OrdinalIgnoreCase))
+        {
+            Logger.LogTrace("Invalid AGE-SECRET-KEY HRP: {Hrp}", hrp);
             throw new AgeKeyException("Invalid AGE-SECRET-KEY format");
+        }
+
         // Bech32.Decode already converts 5-bit to 8-bit, so just validate length
         if (data.Length != 32)
+        {
+            Logger.LogTrace("Invalid AGE-SECRET-KEY length: {DataLength} (expected 32)", data.Length);
             throw new AgeKeyException("Invalid AGE-SECRET-KEY length");
+        }
+
         return data;
     }
 
@@ -119,16 +170,34 @@ public static class KeyFileUtils
     public static byte[] DecodeAgePublicKey(string publicKeyLine)
     {
         if (publicKeyLine == null) throw new ArgumentNullException(nameof(publicKeyLine));
+
         var m = AgePublicKeyRegex.Match(publicKeyLine);
-        if (!m.Success) throw new AgeKeyException("Invalid age public key format");
+        if (!m.Success)
+        {
+            Logger.LogTrace("Invalid age public key format");
+            throw new AgeKeyException("Invalid age public key format");
+        }
+
         var bech32 = publicKeyLine.Trim();
         var (hrp, data) = Bech32.Decode(bech32);
+
+        Logger.LogTrace("Bech32 decoded - HRP: {Hrp}, Data length: {DataLength}", hrp, data.Length);
+
         // Only accept lowercase HRP for public keys (matching age implementation)
         if (!string.Equals(hrp, "age", StringComparison.Ordinal))
+        {
+            Logger.LogTrace("Invalid age public key HRP: {Hrp}", hrp);
             throw new AgeKeyException("Invalid age public key format");
+        }
+
         // Bech32.Decode already converts 5-bit to 8-bit, so just validate length
         if (data.Length != 32)
+        {
+            Logger.LogTrace("Invalid age public key length: {DataLength} (expected 32)", data.Length);
             throw new AgeKeyException("Invalid age public key length");
+        }
+
+        Logger.LogTrace("Successfully decoded age public key: {PublicKeyHex}", BitConverter.ToString(data));
         return data;
     }
 
@@ -146,6 +215,7 @@ public static class KeyFileUtils
         var bech32 = Bech32.Encode("AGE-SECRET-KEY-", privateKey).ToUpperInvariant();
         // Remove any trailing non-alphanumeric characters (e.g., '%')
         bech32 = bech32.TrimEnd('\r', '\n', '%');
+
         return bech32;
     }
 
@@ -160,7 +230,9 @@ public static class KeyFileUtils
             throw new AgeKeyException("Public key must be 32 bytes");
 
         // Encode as Bech32 with "age" HRP (lowercase as per age spec)
-        return Bech32.Encode("age", publicKey);
+        var result = Bech32.Encode("age", publicKey);
+
+        return result;
     }
 
     /// <summary>
@@ -170,6 +242,8 @@ public static class KeyFileUtils
     /// <returns>A list of recipient strings.</returns>
     public static List<string> ReadRecipientsFile(string recipientsFilePath)
     {
+        Logger.LogTrace("Reading recipients file: {RecipientsFilePath}", recipientsFilePath);
+
         var recipients = new List<string>();
         IEnumerable<string> lines;
         if (recipientsFilePath == "-")
@@ -195,7 +269,6 @@ public static class KeyFileUtils
 
     private static IEnumerable<string> ReadLines(TextReader reader)
     {
-        string? line;
-        while ((line = reader.ReadLine()) != null) yield return line;
+        while (reader.ReadLine() is { } line) yield return line;
     }
 }

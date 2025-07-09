@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Utils;
 
@@ -8,6 +10,8 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class RandomUtils
 {
+    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(RandomUtils));
+
     /// <summary>
     ///     Generates cryptographically secure random bytes.
     /// </summary>
@@ -21,6 +25,7 @@ public static class RandomUtils
         var bytes = new byte[length];
         using var rng = RandomNumberGenerator.Create();
         rng.GetBytes(bytes);
+
         return bytes;
     }
 
@@ -34,6 +39,7 @@ public static class RandomUtils
         if (saltLength <= 0)
             throw new AgeCryptoException("Salt length must be positive");
 
-        return GenerateRandomBytes(saltLength);
+        var salt = GenerateRandomBytes(saltLength);
+        return salt;
     }
 } 

@@ -1,6 +1,8 @@
 using System.Text;
 using DotAge.Core.Utils;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Format;
 
@@ -9,6 +11,8 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Stanza
 {
+    private static readonly ILogger<Stanza> _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<Stanza>();
+
     /// <summary>
     ///     Creates a new stanza with the specified type, arguments, and body.
     /// </summary>
@@ -47,6 +51,7 @@ public class Stanza
         if (string.IsNullOrEmpty(type))
             throw new AgeFormatException("Stanza type cannot be null or empty");
 
+
         if (rawTextLines == null)
             return new Stanza(type);
 
@@ -66,12 +71,14 @@ public class Stanza
                 var argsString = firstLine.Substring(type.Length).Trim();
                 var args = argsString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 arguments.AddRange(args);
+                _logger.LogTrace("Extracted arguments from type-prefixed line: {Arguments}", string.Join(", ", args));
             }
             else
             {
                 // If the first line doesn't start with the type, it contains the arguments
                 var args = firstLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 arguments.AddRange(args);
+                _logger.LogTrace("Extracted arguments from standalone line: {Arguments}", string.Join(", ", args));
             }
 
             // The rest of the lines are the body
@@ -80,6 +87,7 @@ public class Stanza
 
         // Decode the base64 body lines
         var bodyBytes = DecodeBase64Lines(bodyLines);
+        _logger.LogTrace("Decoded body bytes: {BodyBytesHex}", BitConverter.ToString(bodyBytes));
 
         return new Stanza(type, arguments, bodyBytes);
     }
@@ -90,6 +98,7 @@ public class Stanza
     /// <returns>The encoded stanza as a string.</returns>
     public string Encode()
     {
+
         var sb = new StringBuilder();
 
         // Add the stanza type line
@@ -110,6 +119,8 @@ public class Stanza
         if (Body.Length > 0)
         {
             var base64 = Base64Utils.EncodeToString(Body);
+            _logger.LogTrace("Body base64: {BodyBase64}", base64);
+
             var wrapped = Base64Utils.WrapBase64(base64);
             sb.Append(wrapped);
             // Add final newline after the body
@@ -133,17 +144,23 @@ public class Stanza
             if (string.IsNullOrEmpty(trimmedLine))
                 continue;
 
+            _logger.LogTrace("Decoding base64 line: {Line}", trimmedLine);
+
             try
             {
                 var lineBytes = Base64Utils.DecodeString(trimmedLine);
                 bodyBytes.AddRange(lineBytes);
+                _logger.LogTrace("Decoded {LineByteCount} bytes from line", lineBytes.Length);
             }
             catch (FormatException ex)
             {
+                _logger.LogTrace("Invalid base64 in stanza body: {Line} - {Error}", trimmedLine, ex.Message);
                 throw new AgeFormatException($"Invalid base64 in stanza body: {trimmedLine} - {ex.Message}", ex);
             }
         }
 
-        return bodyBytes.ToArray();
+        var result = bodyBytes.ToArray();
+        _logger.LogTrace("Total decoded body bytes: {TotalBytes}", result.Length);
+        return result;
     }
 }

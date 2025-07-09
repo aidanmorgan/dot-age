@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using DotAge.Core.Utils;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Format;
 
@@ -10,6 +12,8 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Header
 {
+    private static readonly ILogger<Header> _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<Header>();
+
     // The age file format version
     public const string Version = "age-encryption.org/v1";
 
@@ -41,12 +45,21 @@ public class Header
         sb.Append("\n");
 
         // Add the recipient stanzas
-        foreach (var stanza in Stanzas) sb.Append(stanza.Encode());
+        foreach (var stanza in Stanzas) 
+        {
+            var stanzaEncoded = stanza.Encode();
+            sb.Append(stanzaEncoded);
+            _logger.LogTrace("Added stanza of type {StanzaType}: {StanzaEncoded}", stanza.Type, stanzaEncoded);
+        }
 
         // Add the MAC prefix (without the MAC value)
         sb.Append("---");
+        _logger.LogTrace("Added MAC prefix: ---");
 
-        return sb.ToString();
+        var result = sb.ToString();
+        _logger.LogTrace("Header encoded without MAC: {HeaderLength} characters", result.Length);
+        _logger.LogTrace("Header content: {HeaderContent}", result);
+        return result;
     }
 
     /// <summary>
@@ -62,7 +75,12 @@ public class Header
         sb.Append("\n");
 
         // Add the recipient stanzas
-        foreach (var stanza in Stanzas) sb.Append(stanza.Encode());
+        foreach (var stanza in Stanzas) 
+        {
+            var stanzaEncoded = stanza.Encode();
+            sb.Append(stanzaEncoded);
+            _logger.LogTrace("Added stanza of type {StanzaType}: {StanzaEncoded}", stanza.Type, stanzaEncoded);
+        }
 
         // Add the MAC line if available
         if (Mac != null)
@@ -71,16 +89,24 @@ public class Header
             if (Mac.Length != 32)
                 throw new AgeFormatException(
                     $"MAC must be 32 bytes (got {Mac.Length}) for age/rage compatibility");
+            
+            _logger.LogTrace("MAC value: {MacHex}", BitConverter.ToString(Mac));
+            
             // Use canonical unpadded base64
             var macBase64 = Base64Utils.EncodeToString(Mac);
             sb.Append($"--- {macBase64}\n");
+            _logger.LogTrace("Added MAC line: --- {MacBase64}", macBase64);
         }
         else
         {
             sb.Append("---\n");
+            _logger.LogTrace("Added empty MAC line: ---");
         }
 
-        return sb.ToString();
+        var result = sb.ToString();
+        _logger.LogTrace("Header encoded with MAC: {HeaderLength} characters", result.Length);
+        _logger.LogTrace("Header content: {HeaderContent}", result);
+        return result;
     }
 
     /// <summary>
@@ -92,15 +118,21 @@ public class Header
         if (fileKey == null || fileKey.Length != 16)
             throw new AgeKeyException("File key must be 16 bytes");
 
+        _logger.LogTrace("Calculating header MAC");
+        _logger.LogTrace("File key: {FileKeyHex}", BitConverter.ToString(fileKey));
+
         // Derive the MAC key using HKDF
         var macKey = Hkdf.DeriveKey(fileKey, new byte[0], "header", 32);
+        _logger.LogTrace("Derived MAC key: {MacKeyHex}", BitConverter.ToString(macKey));
 
         // Calculate HMAC-SHA-256 over the header up to and including "---"
         var headerWithoutMac = EncodeWithoutMac();
         var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMac);
+        _logger.LogTrace("Header bytes for MAC calculation: {HeaderBytesHex}", BitConverter.ToString(headerBytes));
 
         using var hmac = new HMACSHA256(macKey);
         Mac = hmac.ComputeHash(headerBytes);
+        _logger.LogTrace("Calculated MAC: {MacHex}", BitConverter.ToString(Mac));
     }
 
     /// <summary>
@@ -113,15 +145,22 @@ public class Header
         if (fileKey == null || fileKey.Length != 16)
             throw new AgeKeyException("File key must be 16 bytes");
 
+        _logger.LogTrace("Calculating header MAC and returning");
+        _logger.LogTrace("File key: {FileKeyHex}", BitConverter.ToString(fileKey));
+
         // Derive the MAC key using HKDF
         var macKey = Hkdf.DeriveKey(fileKey, new byte[0], "header", 32);
+        _logger.LogTrace("Derived MAC key: {MacKeyHex}", BitConverter.ToString(macKey));
 
         // Calculate HMAC-SHA-256 over the header up to and including "---"
         var headerWithoutMac = EncodeWithoutMac();
         var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMac);
+        _logger.LogTrace("Header bytes for MAC calculation: {HeaderBytesHex}", BitConverter.ToString(headerBytes));
 
         using var hmac = new HMACSHA256(macKey);
-        return hmac.ComputeHash(headerBytes);
+        var mac = hmac.ComputeHash(headerBytes);
+        _logger.LogTrace("Calculated MAC: {MacHex}", BitConverter.ToString(mac));
+        return mac;
     }
 
     /// <summary>

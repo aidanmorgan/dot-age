@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Crypto;
 
@@ -8,6 +10,8 @@ namespace DotAge.Core.Crypto;
 /// </summary>
 public static class ChaCha20Poly1305
 {
+    private static readonly ILogger _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ChaCha20Poly1305));
+
     // ChaCha20-Poly1305 key size in bytes
     public const int KeySize = 32;
 
@@ -35,6 +39,15 @@ public static class ChaCha20Poly1305
 
         if (plaintext == null)
             throw new ArgumentNullException(nameof(plaintext));
+
+        _logger.LogTrace("Starting ChaCha20-Poly1305 encryption");
+        _logger.LogTrace("Key: {KeyHex}", BitConverter.ToString(key));
+        _logger.LogTrace("Nonce: {NonceHex}", BitConverter.ToString(nonce));
+        _logger.LogTrace("Plaintext length: {PlaintextLength} bytes", plaintext.Length);
+        if (associatedData != null)
+        {
+            _logger.LogTrace("Associated data: {AssociatedDataHex}", BitConverter.ToString(associatedData));
+        }
 
         using var aead = new System.Security.Cryptography.ChaCha20Poly1305(key);
         var ciphertext = new byte[plaintext.Length];
@@ -68,6 +81,15 @@ public static class ChaCha20Poly1305
 
         if (ciphertext == null || ciphertext.Length < TagSize)
             throw new AgeCryptoException("Ciphertext must include the authentication tag");
+
+        _logger.LogTrace("Starting ChaCha20-Poly1305 decryption");
+        _logger.LogTrace("Key: {KeyHex}", BitConverter.ToString(key));
+        _logger.LogTrace("Nonce: {NonceHex}", BitConverter.ToString(nonce));
+        _logger.LogTrace("Ciphertext length: {CiphertextLength} bytes", ciphertext.Length);
+        if (associatedData != null)
+        {
+            _logger.LogTrace("Associated data: {AssociatedDataHex}", BitConverter.ToString(associatedData));
+        }
 
         // Extract ciphertext and tag
         var actualCiphertext = new byte[ciphertext.Length - TagSize];

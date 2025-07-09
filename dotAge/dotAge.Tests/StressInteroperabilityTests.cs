@@ -17,7 +17,9 @@ public class StressInteroperabilityTests : IDisposable
 {
     private static readonly DotAge.Cli.Program _cli = new DotAge.Cli.Program();
     private static readonly DotAge.KeyGen.Program _keyGen = new DotAge.KeyGen.Program();
-    
+
+    private const int DefaultStressTestCount = 10000;
+
     private readonly ILogger _logger;
     private readonly string _tempDir;
     private readonly Random _random;
@@ -40,8 +42,8 @@ public class StressInteroperabilityTests : IDisposable
         TestUtils.SafeDeleteDirectory(_tempDir);
     }
 
-    [Fact(DisplayName = "Stress Test: 5000 randomized interoperability tests")]
-    public async Task StressTest_5000RandomizedInteroperabilityTests()
+    [Fact(DisplayName = "Stress Test: Randomized interoperability tests")]
+    public async Task StressTest_RandomizedInteroperabilityTests()
     {
         // Only run stress tests when explicitly requested
         var runStressTests = Environment.GetEnvironmentVariable("RUN_STRESS_TESTS");
@@ -64,15 +66,14 @@ public class StressInteroperabilityTests : IDisposable
             "Unicode data encryption/decryption"
         };
 
-        for (int i = 0; i < 5000; i++)
+        for (int i = 0; i < DefaultStressTestCount; i++)
         {
             try
             {
-                var testType = testTypes[i % testTypes.Length];
                 var testData = GenerateRandomTestData(i);
                 var passphrase = GenerateRandomPassphrase(i);
 
-                await RunRandomizedTest(i, testType, testData, passphrase);
+                await RunRandomizedTest(i, testData, passphrase);
                 
                 _successCount++;
             }
@@ -102,7 +103,7 @@ public class StressInteroperabilityTests : IDisposable
     }
     
 
-    private async Task RunRandomizedTest(int testNumber, string testType, byte[] testData, string passphrase)
+    private async Task RunRandomizedTest(int testNumber, byte[] testData, string passphrase)
     {
         var testDir = Path.Combine(_tempDir, $"test_{testNumber}");
         Directory.CreateDirectory(testDir);

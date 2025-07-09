@@ -22,7 +22,7 @@ public static class LoggerFactory
 #if DEBUG
             _loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
             {
-                builder.AddConsole().SetMinimumLevel(LogLevel.Debug);
+                builder.AddConsole().SetMinimumLevel(LogLevel.Trace);
             });
 #else
                 _loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder => { });

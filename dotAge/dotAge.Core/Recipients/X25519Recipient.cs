@@ -3,6 +3,8 @@ using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
 using DotAge.Core.Utils;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Recipients;
 
@@ -11,6 +13,8 @@ namespace DotAge.Core.Recipients;
 /// </summary>
 public class X25519Recipient : IRecipient
 {
+    private static readonly ILogger<X25519Recipient> Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<X25519Recipient>();
+
     private const string HkdfInfoString = "age-encryption.org/v1/X25519";
 
     private readonly byte[] _publicKey;
@@ -32,6 +36,8 @@ public class X25519Recipient : IRecipient
 
         _publicKey = publicKey;
         _privateKey = null;
+        
+        Logger.LogTrace("Created X25519Recipient with public key: {PublicKeyHex}", BitConverter.ToString(publicKey));
     }
 
     /// <summary>
@@ -55,6 +61,9 @@ public class X25519Recipient : IRecipient
 
         _publicKey = publicKey;
         _privateKey = privateKey;
+        
+        Logger.LogTrace("Created X25519Recipient with public key: {PublicKeyHex} and private key: {PrivateKeyHex}", 
+            BitConverter.ToString(publicKey), BitConverter.ToString(privateKey));
     }
 
     /// <summary>
@@ -73,23 +82,34 @@ public class X25519Recipient : IRecipient
     {
         ValidationUtils.ValidateFileKey(fileKey);
 
+        Logger.LogTrace("Creating X25519 stanza for file key: {FileKeyHex}", BitConverter.ToString(fileKey));
+
         // Generate an ephemeral key pair
         var (ephemeralPrivateKey, ephemeralPublicKey) = X25519.GenerateKeyPair();
+        Logger.LogTrace("Generated ephemeral key pair - Private: {EphemeralPrivateKeyHex}, Public: {EphemeralPublicKeyHex}", 
+            BitConverter.ToString(ephemeralPrivateKey), BitConverter.ToString(ephemeralPublicKey));
 
         // Perform key agreement between the ephemeral private key and the recipient's public key
         var sharedSecret = X25519.KeyAgreement(ephemeralPrivateKey, _publicKey);
+        Logger.LogTrace("Generated shared secret: {SharedSecretHex}", BitConverter.ToString(sharedSecret));
 
         // Derive the wrapping key using HKDF with salt = ephemeralPublicKey || recipientPublicKey
         var salt = CombineKeys(ephemeralPublicKey, _publicKey);
+        Logger.LogTrace("Combined salt: {SaltHex}", BitConverter.ToString(salt));
+
         var wrappingKey = Hkdf.DeriveKey(
             sharedSecret, 
             salt, 
             HkdfInfoString, 
             DotAge.Core.Crypto.ChaCha20Poly1305.KeySize);
+        Logger.LogTrace("Derived wrapping key: {WrappingKeyHex}", BitConverter.ToString(wrappingKey));
 
         // Encrypt the file key with the wrapping key
         var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
+        Logger.LogTrace("Using zero nonce: {NonceHex}", BitConverter.ToString(nonce));
+
         var wrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
+        Logger.LogTrace("Wrapped file key: {WrappedKeyHex}", BitConverter.ToString(wrappedKey));
 
         // Create the stanza
         var stanza = new Stanza(Type);
@@ -111,26 +131,44 @@ public class X25519Recipient : IRecipient
         ValidationUtils.ValidateStanza(stanza, Type, 1);
 
         if (_privateKey is null) 
+        {
+            Logger.LogTrace("Cannot unwrap key - no private key available");
             return null; // Cannot unwrap without a private key
+        }
+
+        Logger.LogTrace("Unwrapping key from stanza with {ArgumentCount} arguments and {BodyLength} bytes body", 
+            stanza.Arguments.Count, stanza.Body.Length);
 
         // Extract the ephemeral public key and wrapped key
         var ephemeralPublicKey = Base64Utils.DecodeString(stanza.Arguments[0]);
         var wrappedKey = stanza.Body;
 
+        Logger.LogTrace("Extracted ephemeral public key: {EphemeralPublicKeyHex}", BitConverter.ToString(ephemeralPublicKey));
+        Logger.LogTrace("Extracted wrapped key: {WrappedKeyHex}", BitConverter.ToString(wrappedKey));
+
         // Perform key agreement between the recipient's private key and the ephemeral public key
         var sharedSecret = X25519.KeyAgreement(_privateKey, ephemeralPublicKey);
+        Logger.LogTrace("Generated shared secret: {SharedSecretHex}", BitConverter.ToString(sharedSecret));
 
         // Derive the wrapping key using HKDF with salt = ephemeralPublicKey || recipientPublicKey
         var salt = CombineKeys(ephemeralPublicKey, _publicKey);
+        Logger.LogTrace("Combined salt: {SaltHex}", BitConverter.ToString(salt));
+
         var wrappingKey = Hkdf.DeriveKey(
             sharedSecret, 
             salt, 
             HkdfInfoString, 
             DotAge.Core.Crypto.ChaCha20Poly1305.KeySize);
+        Logger.LogTrace("Derived wrapping key: {WrappingKeyHex}", BitConverter.ToString(wrappingKey));
 
         // Decrypt the wrapped key
         var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-        return DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
+        Logger.LogTrace("Using zero nonce: {NonceHex}", BitConverter.ToString(nonce));
+
+        var unwrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
+        Logger.LogTrace("Unwrapped file key: {UnwrappedKeyHex}", BitConverter.ToString(unwrappedKey));
+
+        return unwrappedKey;
     }
 
     /// <summary>
@@ -147,6 +185,7 @@ public class X25519Recipient : IRecipient
         if (publicKey.Length != X25519.KeySize) 
             throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
 
+        Logger.LogTrace("Creating X25519Recipient from public key: {PublicKeyHex}", BitConverter.ToString(publicKey));
         return new X25519Recipient(publicKey);
     }
 
@@ -164,7 +203,11 @@ public class X25519Recipient : IRecipient
         if (privateKey.Length != X25519.KeySize) 
             throw new AgeKeyException($"Private key must be {X25519.KeySize} bytes");
 
+        Logger.LogTrace("Creating X25519Recipient from private key: {PrivateKeyHex}", BitConverter.ToString(privateKey));
+
         var publicKey = X25519.GetPublicKeyFromPrivateKey(privateKey);
+        Logger.LogTrace("Derived public key: {PublicKeyHex}", BitConverter.ToString(publicKey));
+
         return new X25519Recipient(publicKey, privateKey);
     }
 
@@ -176,9 +219,14 @@ public class X25519Recipient : IRecipient
     /// <returns>A byte array containing both keys concatenated.</returns>
     private static byte[] CombineKeys(byte[] key1, byte[] key2)
     {
+        Logger.LogTrace("Combining keys - Key1: {Key1Hex}, Key2: {Key2Hex}", 
+            BitConverter.ToString(key1), BitConverter.ToString(key2));
+
         var combined = new byte[key1.Length + key2.Length];
         Buffer.BlockCopy(key1, 0, combined, 0, key1.Length);
         Buffer.BlockCopy(key2, 0, combined, key1.Length, key2.Length);
+
+        Logger.LogTrace("Combined result: {CombinedHex}", BitConverter.ToString(combined));
         return combined;
     }
 }

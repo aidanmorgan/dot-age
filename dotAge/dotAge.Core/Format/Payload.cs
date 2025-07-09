@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using DotAge.Core.Crypto;
 using DotAge.Core.Utils;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Format;
 
@@ -11,6 +13,8 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Payload
 {
+    private static readonly ILogger<Payload> _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<Payload>();
+
     /// <summary>
     ///     Initializes a new payload with the given file key.
     /// </summary>
@@ -21,6 +25,7 @@ public class Payload
             throw new AgeKeyException("File key must be 16 bytes");
 
         FileKey = fileKey;
+        _logger.LogTrace("Created payload with file key: {FileKeyHex}", BitConverter.ToString(fileKey));
     }
 
     /// <summary>
@@ -40,11 +45,14 @@ public class Payload
 
         // Generate a random nonce (16 bytes) and write it at the beginning of the payload
         var nonce = RandomUtils.GenerateRandomBytes(16);
+        _logger.LogTrace("Generated nonce: {NonceHex}", BitConverter.ToString(nonce));
 
         destination.Write(nonce, 0, nonce.Length);
 
         // Derive the stream key and create the chunked writer
         var streamKey = DeriveStreamKey(FileKey, nonce);
+        _logger.LogTrace("Derived stream key: {StreamKeyHex}", BitConverter.ToString(streamKey));
+
         return ChunkedStream.CreateWriter(streamKey, destination);
     }
 
@@ -64,8 +72,11 @@ public class Payload
         if (bytesRead != 16)
             throw new AgeDecryptionException("Failed to read nonce from payload");
 
+        _logger.LogTrace("Read nonce from source stream: {NonceHex}", BitConverter.ToString(nonce));
+
         // Derive the stream key and create the chunked reader
         var streamKey = DeriveStreamKey(FileKey, nonce);
+        _logger.LogTrace("Derived stream key: {StreamKeyHex}", BitConverter.ToString(streamKey));
 
         return ChunkedStream.CreateReader(streamKey, source);
     }
@@ -81,6 +92,8 @@ public class Payload
             throw new ArgumentNullException(nameof(data));
         if (destination == null)
             throw new ArgumentNullException(nameof(destination));
+
+        _logger.LogTrace("Data to encrypt: {DataHex}", BitConverter.ToString(data));
 
         using (var writer = CreateEncryptWriter(destination))
         {
@@ -108,10 +121,13 @@ public class Payload
             }
             catch (IOException ex)
             {
+                _logger.LogTrace("IO error during chunked decryption: {Error}", ex.Message);
                 throw new AgeDecryptionException("Error during chunked decryption", ex);
             }
 
-            return memoryStream.ToArray();
+            var result = memoryStream.ToArray();
+            _logger.LogTrace("Decrypted data: {ResultHex}", BitConverter.ToString(result));
+            return result;
         }
     }
 
@@ -128,8 +144,15 @@ public class Payload
         if (nonce == null || nonce.Length != 16)
             throw new AgeCryptoException("Nonce must be 16 bytes");
 
+        _logger.LogTrace("Deriving stream key using HKDF");
+        _logger.LogTrace("File key: {FileKeyHex}", BitConverter.ToString(fileKey));
+        _logger.LogTrace("Nonce: {NonceHex}", BitConverter.ToString(nonce));
+
         // Use HKDF with SHA256, fileKey as IKM (secret), nonce as salt, and "payload" as info
         // This matches the age implementation: hkdf.New(sha256.New, fileKey, nonce, []byte("payload"))
-        return Hkdf.DeriveKey(fileKey, nonce, "payload", 32);
+        var streamKey = Hkdf.DeriveKey(fileKey, nonce, "payload", 32);
+        _logger.LogTrace("Derived stream key: {StreamKeyHex}", BitConverter.ToString(streamKey));
+
+        return streamKey;
     }
 }

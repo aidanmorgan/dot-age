@@ -1,5 +1,7 @@
 using DotAge.Core.Format;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Utils;
 
@@ -8,6 +10,8 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class ValidationUtils
 {
+    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ValidationUtils));
+
     /// <summary>
     ///     Validates a file key.
     /// </summary>
@@ -18,7 +22,13 @@ public static class ValidationUtils
     {
         ArgumentNullException.ThrowIfNull(fileKey);
 
-        if (fileKey.Length != 16) throw new AgeKeyException("File key must be 16 bytes");
+        Logger.LogTrace("Validating file key of length {FileKeyLength}", fileKey.Length);
+        Logger.LogTrace("File key: {FileKeyHex}", BitConverter.ToString(fileKey));
+
+        if (fileKey.Length == 16) return;
+        
+        Logger.LogTrace("File key validation failed: expected 16 bytes, got {FileKeyLength}", fileKey.Length);
+        throw new AgeKeyException("File key must be 16 bytes");
     }
 
     /// <summary>
@@ -32,14 +42,24 @@ public static class ValidationUtils
     public static void ValidateStanza(Stanza stanza, string expectedType, int expectedArgumentCount)
     {
         ArgumentNullException.ThrowIfNull(stanza);
-
+        
         if (!string.Equals(stanza.Type, expectedType, StringComparison.Ordinal))
+        {
+            Logger.LogTrace("Stanza type validation failed: expected '{ExpectedType}', got '{StanzaType}'", 
+                expectedType, stanza.Type);
             throw new AgeFormatException($"Expected stanza type '{expectedType}', got '{stanza.Type}'");
+        }
 
         if (stanza.Arguments.Count != expectedArgumentCount)
+        {
+            Logger.LogTrace("Stanza argument count validation failed: expected {ExpectedArgumentCount}, got {ArgumentCount}", 
+                expectedArgumentCount, stanza.Arguments.Count);
             throw new AgeFormatException($"Expected {expectedArgumentCount} arguments, got {stanza.Arguments.Count}");
+        }
 
-        if (stanza.Body.Length == 0)
-            throw new AgeFormatException("Stanza body cannot be empty");
+        if (stanza.Body.Length != 0) return;
+        
+        Logger.LogTrace("Stanza body validation failed: body is empty");
+        throw new AgeFormatException("Stanza body cannot be empty");
     }
 } 

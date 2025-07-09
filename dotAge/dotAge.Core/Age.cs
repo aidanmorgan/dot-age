@@ -4,6 +4,8 @@ using DotAge.Core.Format;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core;
 
@@ -12,6 +14,8 @@ namespace DotAge.Core;
 /// </summary>
 public class Age
 {
+    private static readonly ILogger<Age> _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<Age>();
+
     // The list of identities (for decryption)
     private readonly List<IRecipient> _identities = [];
 
@@ -27,6 +31,7 @@ public class Age
     public Age AddRecipient(IRecipient recipient)
     {
         ArgumentNullException.ThrowIfNull(recipient);
+        _logger.LogTrace("Adding recipient of type {RecipientType}", recipient.Type);
         _recipients.Add(recipient);
         return this;
     }
@@ -40,6 +45,7 @@ public class Age
     public Age AddIdentity(IRecipient identity)
     {
         ArgumentNullException.ThrowIfNull(identity);
+        _logger.LogTrace("Adding identity of type {IdentityType}", identity.Type);
         _identities.Add(identity);
         return this;
     }
@@ -54,6 +60,9 @@ public class Age
     public byte[] Encrypt(byte[] plaintext)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
+
+        _logger.LogTrace("Starting encryption with {PlaintextLength} bytes, {RecipientCount} recipients", 
+            plaintext.Length, _recipients.Count);
 
         if (_recipients.Count == 0)
             throw new AgeEncryptionException("No recipients specified");
@@ -76,13 +85,16 @@ public class Age
         using var writer = new StreamWriter(ms, Encoding.ASCII);
 
         // Write the header
-        writer.Write(header.Encode());
+        var headerEncoded = header.Encode();
+        _logger.LogTrace("Header encoded length: {HeaderLength} bytes", headerEncoded.Length);
+        writer.Write(headerEncoded);
         writer.Flush();
 
         // Write the payload using chunked encryption
         payload.EncryptData(plaintext, ms);
 
-        return ms.ToArray();
+        var result = ms.ToArray();
+        return result;
     }
 
     /// <summary>
@@ -98,6 +110,9 @@ public class Age
     {
         ArgumentNullException.ThrowIfNull(ciphertext);
 
+        _logger.LogTrace("Starting decryption with {CiphertextLength} bytes, {IdentityCount} identities", 
+            ciphertext.Length, _identities.Count);
+
         if (_identities.Count == 0)
             throw new AgeDecryptionException("No identities specified");
 
@@ -107,6 +122,8 @@ public class Age
             throw new AgeFormatException("Malformed age file: no header footer found");
 
         var (header, payloadStart) = headerInfo;
+        _logger.LogTrace("Header parsed successfully. Payload starts at position {PayloadStart}, {StanzaCount} stanzas found", 
+            payloadStart, header.Stanzas.Count);
 
         // Create a new stream positioned at the payload start
         using var ms = new MemoryStream(ciphertext);
@@ -122,10 +139,13 @@ public class Age
                 {
                     fileKey = identity.UnwrapKey(stanza);
                     if (fileKey is not null)
+                    {
                         break;
+                    }
                 }
-                catch (CryptographicException)
+                catch (CryptographicException ex)
                 {
+                    _logger.LogTrace("Failed to unwrap key with stanza {StanzaType}: {Error}", stanza.Type, ex.Message);
                     // Continue to next stanza
                 }
             }
@@ -139,12 +159,15 @@ public class Age
 
         // Verify the header MAC
         header.CalculateMac(fileKey);
+
         if (header.Mac is null)
             throw new AgeCryptoException("Failed to calculate header MAC");
 
         // The stream is now positioned at the start of the payload
         var payload = new Payload(fileKey);
-        return payload.DecryptData(ms);
+        var plaintext = payload.DecryptData(ms);
+
+        return plaintext;
     }
 
     /// <summary>
@@ -164,14 +187,18 @@ public class Age
         if (!File.Exists(inputPath))
             throw new AgeFormatException("Input file not found");
 
+        _logger.LogTrace("Encrypting file: {InputPath} -> {OutputPath}", inputPath, outputPath);
+
         // Read the input file
         var plaintext = File.ReadAllBytes(inputPath);
+        _logger.LogTrace("Read {PlaintextLength} bytes from input file", plaintext.Length);
 
         // Encrypt the plaintext
         var ciphertext = Encrypt(plaintext);
 
         // Write the output file
         File.WriteAllBytes(outputPath, ciphertext);
+        _logger.LogTrace("Wrote {CiphertextLength} bytes to output file", ciphertext.Length);
     }
 
     /// <summary>
@@ -192,14 +219,18 @@ public class Age
         if (!File.Exists(inputPath))
             throw new AgeFormatException("Input file not found");
 
+        _logger.LogTrace("Encrypting file asynchronously: {InputPath} -> {OutputPath}", inputPath, outputPath);
+
         // Read the input file
         var plaintext = await File.ReadAllBytesAsync(inputPath, cancellationToken);
+        _logger.LogTrace("Read {PlaintextLength} bytes from input file", plaintext.Length);
 
         // Encrypt the plaintext
         var ciphertext = Encrypt(plaintext);
 
         // Write the output file
         await File.WriteAllBytesAsync(outputPath, ciphertext, cancellationToken);
+        _logger.LogTrace("Wrote {CiphertextLength} bytes to output file", ciphertext.Length);
     }
 
     /// <summary>
@@ -219,14 +250,18 @@ public class Age
         if (!File.Exists(inputPath))
             throw new AgeFormatException("Input file not found");
 
+        _logger.LogTrace("Decrypting file: {InputPath} -> {OutputPath}", inputPath, outputPath);
+
         // Read the input file
         var ciphertext = File.ReadAllBytes(inputPath);
+        _logger.LogTrace("Read {CiphertextLength} bytes from input file", ciphertext.Length);
 
         // Decrypt the ciphertext
         var plaintext = Decrypt(ciphertext);
 
         // Write the output file
         File.WriteAllBytes(outputPath, plaintext);
+        _logger.LogTrace("Wrote {PlaintextLength} bytes to output file", plaintext.Length);
     }
 
     /// <summary>
@@ -247,14 +282,18 @@ public class Age
         if (!File.Exists(inputPath))
             throw new AgeFormatException("Input file not found");
 
+        _logger.LogTrace("Decrypting file asynchronously: {InputPath} -> {OutputPath}", inputPath, outputPath);
+
         // Read the input file
         var ciphertext = await File.ReadAllBytesAsync(inputPath, cancellationToken);
+        _logger.LogTrace("Read {CiphertextLength} bytes from input file", ciphertext.Length);
 
         // Decrypt the ciphertext
         var plaintext = Decrypt(ciphertext);
 
         // Write the output file
         await File.WriteAllBytesAsync(outputPath, plaintext, cancellationToken);
+        _logger.LogTrace("Wrote {PlaintextLength} bytes to output file", plaintext.Length);
     }
 
     /// <summary>
@@ -264,6 +303,8 @@ public class Age
     /// <returns>A tuple containing the parsed header and payload start position, or null if parsing fails.</returns>
     private static (Header header, long payloadStart)? ParseHeaderWithPosition(byte[] ciphertext)
     {
+        _logger.LogTrace("Parsing header from {CiphertextLength} bytes of ciphertext", ciphertext.Length);
+
         try
         {
             // Robust header/footer parsing using byte-based line reading
@@ -286,6 +327,7 @@ public class Age
                     {
                         foundFooter = true;
                         headerBytes.AddRange(lineBuffer);
+                        _logger.LogTrace("Found footer at position {Position}", ms.Position);
                         break;
                     }
 
@@ -295,7 +337,10 @@ public class Age
             }
 
             if (!foundFooter)
+            {
+                _logger.LogTrace("No footer found, malformed age file");
                 return null; // Malformed age file
+            }
 
             // Skip any blank lines after the footer
             var payloadStart = ms.Position;
@@ -314,12 +359,18 @@ public class Age
                 payloadStart = ms.Position;
             }
 
+            _logger.LogTrace("Payload starts at position {PayloadStart}", payloadStart);
+
             var headerText = Encoding.ASCII.GetString(headerBytes.ToArray());
+            
             var header = Header.Decode(headerText);
+            _logger.LogTrace("Header parsed successfully with {StanzaCount} stanzas", header.Stanzas.Count);
+            
             return (header, payloadStart);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogTrace("Failed to parse header: {Error}", ex.Message);
             return null; // If we can't parse the header, return null
         }
     }
@@ -341,7 +392,10 @@ public class Age
     {
         ArgumentNullException.ThrowIfNull(ciphertext);
 
+        _logger.LogTrace("Checking if ciphertext is passphrase-encrypted");
         var header = ParseHeader(ciphertext);
-        return header?.Stanzas.Any(stanza => stanza.Type == "scrypt") ?? false;
+        var isPassphraseEncrypted = header?.Stanzas.Any(stanza => stanza.Type == "scrypt") ?? false;
+        _logger.LogTrace("Is passphrase-encrypted: {IsPassphraseEncrypted}", isPassphraseEncrypted);
+        return isPassphraseEncrypted;
     }
 }

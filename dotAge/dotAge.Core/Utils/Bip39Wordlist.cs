@@ -1,4 +1,6 @@
 using System;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Utils;
 
@@ -7,6 +9,8 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class Bip39Wordlist
 {
+    private static readonly ILogger _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Bip39Wordlist));
+
     /// <summary>
     /// Gets the length of the BIP39 wordlist.
     /// </summary>
@@ -21,9 +25,14 @@ public static class Bip39Wordlist
     public static string GetWord(int index)
     {
         if (index < 0 || index >= Words.Length)
+        {
+            _logger.LogTrace("Invalid wordlist index: {Index} (valid range: 0-{MaxIndex})", index, Words.Length - 1);
             throw new ArgumentOutOfRangeException(nameof(index), "Index is out of range");
+        }
 
-        return Words[index];
+        var word = Words[index];
+        _logger.LogTrace("Retrieved word at index {Index}: {Word}", index, word);
+        return word;
     }
 
     /// <summary>
@@ -201,9 +210,9 @@ public static class Bip39Wordlist
         "speed", "spell", "spend", "sphere", "spice", "spider", "spike", "spin", "spirit", "split",
         "spoil", "sponsor", "spoon", "sport", "spot", "spray", "spread", "spring", "spy", "square",
         "squeeze", "squirrel", "stable", "stadium", "staff", "stage", "stairs", "stamp", "stand", "start",
-        "state", "stay", "steak", "steel", "stem", "step", "stereo", "stick", "still", "sting",
-        "stock", "stomach", "stone", "stool", "story", "stove", "strategy", "street", "strike", "strong",
-        "struggle", "student", "stuff", "stumble", "style", "subject", "submit", "subway", "success", "such",
+        "state", "stay", "steak", "steel", "stem", "step", "stereo", "stick", "still", "sting", "stock",
+        "stomach", "stone", "stool", "story", "stove", "strategy", "street", "strike", "strong", "struggle",
+        "student", "stuff", "stumble", "stunt", "style", "subject", "submit", "subway", "success", "such",
         "sudden", "suffer", "sugar", "suggest", "suit", "summer", "sun", "sunny", "sunset", "super",
         "supply", "supreme", "sure", "surface", "surge", "surprise", "surround", "survey", "suspect", "sustain",
         "swallow", "swamp", "swap", "swarm", "swear", "sweet", "swift", "swim", "swing", "switch",
@@ -212,7 +221,7 @@ public static class Bip39Wordlist
         "tell", "ten", "tenant", "tennis", "tent", "term", "test", "text", "thank", "that",
         "theme", "then", "theory", "there", "they", "thing", "this", "thought", "three", "thrive",
         "throw", "thumb", "thunder", "ticket", "tide", "tiger", "tilt", "timber", "time", "tiny",
-        "tip", "tired", "tissue", "title", "toast", "tobacco", "today", "toddler", "toe", "together",
+        "tip", "tired", "tissue", "titan", "toast", "tobacco", "today", "toddler", "toe", "together",
         "toilet", "token", "tomato", "tomorrow", "tone", "tongue", "tonight", "tool", "tooth", "top",
         "topic", "topple", "torch", "tornado", "tortoise", "toss", "total", "tourist", "toward", "tower",
         "town", "toy", "track", "trade", "traffic", "tragic", "train", "transfer", "trap", "trash",
@@ -221,20 +230,21 @@ public static class Bip39Wordlist
         "tube", "tuition", "tumble", "tuna", "tunnel", "turkey", "turn", "turtle", "twelve", "twenty",
         "twice", "twin", "twist", "two", "type", "typical", "ugly", "umbrella", "unable", "unaware",
         "uncle", "uncover", "under", "undo", "unfair", "unfold", "unhappy", "uniform", "unique", "unit",
-        "universe", "unknown", "unlock", "until", "unusual", "unveil", "update", "upgrade", "uphold", "upon",
-        "upper", "upset", "urban", "urge", "usage", "use", "used", "useful", "useless", "usual",
+        "universe", "unknown", "unlock", "until", "unusual", "unveil", "update", "upgrade", "uphold", "upright",
+        "upstairs", "upward", "urban", "urge", "usage", "use", "used", "useful", "useless", "usual",
         "utility", "vacant", "vacuum", "vague", "valid", "valley", "valve", "van", "vanish", "vapor",
-        "various", "vast", "vault", "vehicle", "velvet", "vendor", "venture", "venue", "verb", "verify",
+        "various", "vast", "vault", "vehicle", "velvet", "vendor", "venom", "venue", "verb", "verify",
         "version", "very", "vessel", "veteran", "viable", "vibrant", "vicious", "victory", "video", "view",
         "village", "vintage", "violin", "virtual", "virus", "visa", "visit", "visual", "vital", "vivid",
         "vocal", "voice", "void", "volcano", "volume", "vote", "voyage", "wage", "wagon", "wait",
         "walk", "wall", "walnut", "want", "warfare", "warm", "warrior", "wash", "wasp", "waste",
         "water", "wave", "way", "wealth", "weapon", "wear", "weasel", "weather", "web", "wedding",
-        "weekend", "weird", "welcome", "west", "wet", "whale", "what", "wheat", "wheel", "when",
-        "where", "whip", "whisper", "wide", "width", "wife", "wild", "will", "win", "window",
-        "wine", "wing", "wink", "winner", "winter", "wire", "wisdom", "wise", "wish", "witness",
-        "wolf", "woman", "wonder", "wood", "wool", "word", "work", "world", "worry", "worth",
-        "wrap", "wreck", "wrestle", "wrist", "write", "wrong", "yard", "year", "yellow", "you",
-        "young", "youth", "zebra", "zero", "zone", "zoo"
+        "weekend", "weird", "welcome", "west", "wet", "whale", "what", "whatever", "wheat", "wheel",
+        "when", "whenever", "where", "whereas", "wherever", "whip", "whisper", "wide", "width", "wife",
+        "wild", "will", "willing", "win", "window", "wine", "wing", "wink", "winner", "winter",
+        "wire", "wisdom", "wise", "wish", "witness", "wolf", "woman", "wonder", "wood", "wool",
+        "word", "work", "world", "worry", "worth", "would", "wound", "wrap", "wreck", "wrestle",
+        "wrist", "write", "wrong", "yard", "year", "yellow", "you", "young", "youth", "zebra",
+        "zero", "zone", "zoo"
     };
 }

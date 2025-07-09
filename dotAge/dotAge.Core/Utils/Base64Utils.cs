@@ -1,5 +1,7 @@
 using System.Text;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core.Utils;
 
@@ -8,6 +10,8 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class Base64Utils
 {
+    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Base64Utils));
+
     /// <summary>
     ///     Encodes bytes to unpadded base64 string (equivalent to base64.RawStdEncoding in Go).
     /// </summary>
@@ -18,7 +22,11 @@ public static class Base64Utils
         if (data == null)
             throw new ArgumentNullException(nameof(data));
 
-        return Convert.ToBase64String(data).TrimEnd('=');
+        Logger.LogTrace("Encoding {DataLength} bytes to base64", data.Length);
+
+        var result = Convert.ToBase64String(data).TrimEnd('=');
+
+        return result;
     }
 
     /// <summary>
@@ -34,7 +42,10 @@ public static class Base64Utils
 
         // Check for newline characters (not allowed in age format)
         if (s.Contains('\n') || s.Contains('\r'))
+        {
+            Logger.LogTrace("Base64 string contains newline characters, which is not allowed");
             throw new AgeFormatException("unexpected newline character");
+        }
 
         // Add padding if needed
         var padded = s;
@@ -43,10 +54,12 @@ public static class Base64Utils
 
         try
         {
-            return Convert.FromBase64String(padded);
+            var result = Convert.FromBase64String(padded);
+            return result;
         }
         catch (FormatException ex)
         {
+            Logger.LogTrace("Invalid base64 string: {Error}", ex.Message);
             throw new AgeFormatException($"Invalid base64 string: {ex.Message}", ex);
         }
     }
@@ -65,6 +78,9 @@ public static class Base64Utils
         if (columnsPerLine <= 0)
             throw new AgeFormatException("columnsPerLine must be positive");
 
+        Logger.LogTrace("Wrapping base64 string of length {Base64Length} at {ColumnsPerLine} columns per line", 
+            base64.Length, columnsPerLine);
+
         var sb = new StringBuilder();
         for (var i = 0; i < base64.Length; i += columnsPerLine)
         {
@@ -73,6 +89,8 @@ public static class Base64Utils
             if (i + columnsPerLine < base64.Length) sb.Append('\n');
         }
 
-        return sb.ToString();
+        var result = sb.ToString();
+        Logger.LogTrace("Wrapped base64 result: {ResultLength} characters", result.Length);
+        return result;
     }
 }
