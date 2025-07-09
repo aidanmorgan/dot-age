@@ -113,7 +113,7 @@ age.DecryptFile("ciphertext.age", "plaintext.txt");
 ## Implementation Details
 
 - Uses System.Security.Cryptography.ChaCha20Poly1305 for encryption/decryption
-- Uses Curve25519.NetCore for X25519 key generation and key agreement
+- Uses Curve25519.NetCore for X25519 key generation and key agreement (with proper RFC 7748 key clamping)
 - Includes a native Scrypt implementation that is thread-safe and provides async capabilities
 - All cryptographic operations support both synchronous and asynchronous APIs
 

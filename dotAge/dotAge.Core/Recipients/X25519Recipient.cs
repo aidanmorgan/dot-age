@@ -1,257 +1,107 @@
-using System;
 using System.Security.Cryptography;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using DotAge.Core.Crypto;
+using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
-using Curve25519.NetCore;
+using DotAge.Core.Utils;
 
-namespace DotAge.Core.Recipients
+namespace DotAge.Core.Recipients;
+
+/// <summary>
+///     X25519 recipient implementation for age encryption.
+/// </summary>
+public class X25519Recipient : IRecipient
 {
-    /// <summary>
-    /// Represents an X25519 recipient in the age encryption system.
-    /// </summary>
-    public class X25519Recipient : IRecipient
+    private const string HkdfInfoString = "age-encryption.org/v1/X25519";
+    private readonly byte[] _publicKey;
+    private readonly byte[]? _privateKey;
+
+    public X25519Recipient(byte[] publicKey)
     {
-        // The HKDF info string for X25519
-        private const string HkdfInfoString = "age-encryption.org/v1/X25519";
+        if (publicKey == null) throw new ArgumentNullException(nameof(publicKey));
+        if (publicKey.Length != X25519.KeySize) throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
+        _publicKey = publicKey;
+        _privateKey = null;
+    }
 
-        // The public key of the recipient
-        private readonly byte[] _publicKey;
+    public X25519Recipient(byte[] publicKey, byte[] privateKey)
+    {
+        if (publicKey == null) throw new ArgumentNullException(nameof(publicKey));
+        if (privateKey == null) throw new ArgumentNullException(nameof(privateKey));
+        if (publicKey.Length != X25519.KeySize) throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
+        if (privateKey.Length != X25519.KeySize) throw new AgeKeyException($"Private key must be {X25519.KeySize} bytes");
+        
+        _publicKey = publicKey;
+        _privateKey = privateKey;
+    }
 
-        // The private key of the recipient (optional)
-        private readonly byte[]? _privateKey;
+    public string Type => "X25519";
 
-        /// <summary>
-        /// Gets the type of the recipient.
-        /// </summary>
-        public string Type => "X25519";
+    public Stanza CreateStanza(byte[] fileKey)
+    {
+        ValidationUtils.ValidateFileKey(fileKey);
 
-        /// <summary>
-        /// Validates a file key.
-        /// </summary>
-        /// <param name="fileKey">The file key to validate.</param>
-        /// <exception cref="ArgumentException">Thrown when the file key is invalid.</exception>
-        /// <exception cref="ArgumentNullException">Thrown when the file key is null.</exception>
-        private static void ValidateFileKey(byte[] fileKey)
-        {
-            ArgumentNullException.ThrowIfNull(fileKey);
+        // Generate an ephemeral key pair
+        var (ephemeralPrivateKey, ephemeralPublicKey) = X25519.GenerateKeyPair();
 
-            if (fileKey.Length != DotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
-            {
-                throw new ArgumentException($"File key must be {DotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(fileKey));
-            }
-        }
+        // Perform key agreement between the ephemeral private key and the recipient's public key
+        var sharedSecret = X25519.KeyAgreement(ephemeralPrivateKey, _publicKey);
 
-        /// <summary>
-        /// Validates a stanza.
-        /// </summary>
-        /// <param name="stanza">The stanza to validate.</param>
-        /// <exception cref="ArgumentNullException">Thrown when the stanza is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when the stanza is invalid.</exception>
-        private void ValidateStanza(Stanza stanza)
-        {
-            ArgumentNullException.ThrowIfNull(stanza);
+        // Derive the wrapping key using HKDF with salt = ephemeralPublicKey || recipientPublicKey
+        var salt = new byte[ephemeralPublicKey.Length + _publicKey.Length];
+        Buffer.BlockCopy(ephemeralPublicKey, 0, salt, 0, ephemeralPublicKey.Length);
+        Buffer.BlockCopy(_publicKey, 0, salt, ephemeralPublicKey.Length, _publicKey.Length);
 
-            if (stanza.Type != Type)
-            {
-                throw new ArgumentException($"Stanza type must be {Type}", nameof(stanza));
-            }
+        var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, HkdfInfoString, DotAge.Core.Crypto.ChaCha20Poly1305.KeySize);
 
-            if (stanza.Arguments.Count != 1)
-            {
-                throw new ArgumentException("Stanza must have exactly one argument", nameof(stanza));
-            }
+        // Encrypt the file key with the wrapping key
+        var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
+        var wrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
 
-            // For decryption, we need at least one body line
-            if (stanza.Body.Count < 1)
-            {
-                throw new ArgumentException("Stanza must have at least one body line", nameof(stanza));
-            }
-        }
+        // Create the stanza
+        var stanza = new Stanza(Type);
+        stanza.Arguments.Add(Base64Utils.EncodeToString(ephemeralPublicKey));
+        stanza.Body = wrappedKey;
 
-        /// <summary>
-        /// Creates a new X25519 recipient with the specified public key.
-        /// </summary>
-        /// <param name="publicKey">The public key of the recipient.</param>
-        /// <exception cref="ArgumentException">Thrown when the public key is invalid.</exception>
-        /// <exception cref="ArgumentNullException">Thrown when the public key is null.</exception>
-        public X25519Recipient(byte[] publicKey)
-        {
-            ArgumentNullException.ThrowIfNull(publicKey);
+        return stanza;
+    }
 
-            if (publicKey.Length != X25519.KeySize)
-            {
-                throw new ArgumentException($"Public key must be {X25519.KeySize} bytes", nameof(publicKey));
-            }
+    public byte[]? UnwrapKey(Stanza stanza)
+    {
+        ValidationUtils.ValidateStanza(stanza, Type, 1);
 
-            _publicKey = publicKey;
-            _privateKey = null;
-        }
+        if (_privateKey == null) return null; // Cannot unwrap without a private key
 
-        /// <summary>
-        /// Creates a new X25519 recipient with the specified public and private keys.
-        /// </summary>
-        /// <param name="publicKey">The public key of the recipient.</param>
-        /// <param name="privateKey">The private key of the recipient.</param>
-        /// <exception cref="ArgumentException">Thrown when the public or private key is invalid.</exception>
-        /// <exception cref="ArgumentNullException">Thrown when the public or private key is null.</exception>
-        public X25519Recipient(byte[] publicKey, byte[] privateKey)
-        {
-            ArgumentNullException.ThrowIfNull(publicKey);
-            ArgumentNullException.ThrowIfNull(privateKey);
+        // Extract the ephemeral public key and wrapped key
+        var ephemeralPublicKey = Base64Utils.DecodeString(stanza.Arguments[0]);
+        var wrappedKey = stanza.Body;
 
-            if (publicKey.Length != X25519.KeySize)
-            {
-                throw new ArgumentException($"Public key must be {X25519.KeySize} bytes", nameof(publicKey));
-            }
+        // Perform key agreement between the recipient's private key and the ephemeral public key
+        var sharedSecret = X25519.KeyAgreement(_privateKey, ephemeralPublicKey);
 
-            if (privateKey.Length != X25519.KeySize)
-            {
-                throw new ArgumentException($"Private key must be {X25519.KeySize} bytes", nameof(privateKey));
-            }
+        // Derive the wrapping key using HKDF with salt = ephemeralPublicKey || recipientPublicKey
+        var salt = new byte[ephemeralPublicKey.Length + _publicKey.Length];
+        Buffer.BlockCopy(ephemeralPublicKey, 0, salt, 0, ephemeralPublicKey.Length);
+        Buffer.BlockCopy(_publicKey, 0, salt, ephemeralPublicKey.Length, _publicKey.Length);
 
-            _publicKey = publicKey;
-            _privateKey = privateKey;
-        }
+        var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, HkdfInfoString, DotAge.Core.Crypto.ChaCha20Poly1305.KeySize);
 
-        /// <summary>
-        /// Creates a new X25519 recipient from an encoded public key.
-        /// </summary>
-        /// <param name="encodedPublicKey">The encoded public key.</param>
-        /// <returns>A new X25519 recipient.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when the encoded public key is null.</exception>
-        /// <exception cref="FormatException">Thrown when the encoded public key is invalid.</exception>
-        public static X25519Recipient FromEncodedPublicKey(string encodedPublicKey)
-        {
-            ArgumentNullException.ThrowIfNull(encodedPublicKey);
+        // Decrypt the wrapped key
+        var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
+        return DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
+    }
 
-            var publicKey = X25519.DecodePublicKey(encodedPublicKey);
-            return new X25519Recipient(publicKey);
-        }
+    public static X25519Recipient FromPublicKey(byte[] publicKey)
+    {
+        if (publicKey == null) throw new ArgumentNullException(nameof(publicKey));
+        if (publicKey.Length != X25519.KeySize) throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
+        return new X25519Recipient(publicKey);
+    }
 
-        /// <summary>
-        /// Creates a new X25519 recipient from an encoded private key.
-        /// </summary>
-        /// <param name="encodedPrivateKey">The encoded private key.</param>
-        /// <returns>A new X25519 recipient.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when the encoded private key is null.</exception>
-        /// <exception cref="FormatException">Thrown when the encoded private key is invalid.</exception>
-        public static X25519Recipient FromEncodedPrivateKey(string encodedPrivateKey)
-        {
-            ArgumentNullException.ThrowIfNull(encodedPrivateKey);
-
-            var privateKey = X25519.DecodePrivateKey(encodedPrivateKey);
-
-            // Generate the public key from the private key using Curve25519.NetCore
-            var curve25519 = new Curve25519.NetCore.Curve25519();
-            var publicKey = curve25519.GetPublicKey(privateKey);
-
-            return new X25519Recipient(publicKey, privateKey);
-        }
-
-        /// <summary>
-        /// Creates a stanza for the recipient.
-        /// </summary>
-        /// <param name="fileKey">The file key to wrap.</param>
-        /// <returns>A stanza containing the wrapped file key.</returns>
-        /// <exception cref="ArgumentException">Thrown when the file key is invalid.</exception>
-        /// <exception cref="ArgumentNullException">Thrown when the file key is null.</exception>
-        public Stanza CreateStanza(byte[] fileKey)
-        {
-            ValidateFileKey(fileKey);
-
-            // Generate an ephemeral key pair
-            var (ephemeralPrivateKey, ephemeralPublicKey) = X25519.GenerateKeyPair();
-
-            // Perform key agreement between the ephemeral private key and the recipient's public key
-            var sharedSecret = X25519.KeyAgreement(ephemeralPrivateKey, _publicKey);
-
-            // Derive the wrapping key
-            using var hkdf = new HMACSHA256(Encoding.ASCII.GetBytes(HkdfInfoString));
-            hkdf.TransformBlock(ephemeralPublicKey, 0, ephemeralPublicKey.Length, null, 0);
-            hkdf.TransformBlock(_publicKey, 0, _publicKey.Length, null, 0);
-            hkdf.TransformFinalBlock(sharedSecret, 0, sharedSecret.Length);
-            var wrappingKey = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.KeySize];
-            Buffer.BlockCopy(hkdf.Hash, 0, wrappingKey, 0, wrappingKey.Length);
-
-            // Encrypt the file key with the wrapping key
-            var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-            var wrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
-
-            // Create the stanza
-            var stanza = new Stanza(Type);
-            stanza.Arguments.Add(Convert.ToBase64String(ephemeralPublicKey));
-            stanza.Body.Add(Convert.ToBase64String(wrappedKey));
-
-            return stanza;
-        }
-
-        /// <summary>
-        /// Unwraps a file key from a stanza.
-        /// </summary>
-        /// <param name="stanza">The stanza containing the wrapped file key.</param>
-        /// <returns>The unwrapped file key, or null if the recipient cannot unwrap the file key.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when the stanza is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when the stanza is invalid.</exception>
-        public byte[]? UnwrapKey(Stanza stanza)
-        {
-            ValidateStanza(stanza);
-
-            if (_privateKey == null)
-            {
-                return null; // Cannot unwrap without a private key
-            }
-
-            // Extract the ephemeral public key and wrapped key
-            var ephemeralPublicKey = Convert.FromBase64String(stanza.Arguments[0]);
-            var wrappedKey = Convert.FromBase64String(stanza.Body[0]);
-
-            // Perform key agreement between the recipient's private key and the ephemeral public key
-            var sharedSecret = X25519.KeyAgreement(_privateKey, ephemeralPublicKey);
-
-            // Derive the wrapping key
-            using var hkdf = new HMACSHA256(Encoding.ASCII.GetBytes(HkdfInfoString));
-            hkdf.TransformBlock(ephemeralPublicKey, 0, ephemeralPublicKey.Length, null, 0);
-            hkdf.TransformBlock(_publicKey, 0, _publicKey.Length, null, 0);
-            hkdf.TransformFinalBlock(sharedSecret, 0, sharedSecret.Length);
-            var wrappingKey = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.KeySize];
-            Buffer.BlockCopy(hkdf.Hash, 0, wrappingKey, 0, wrappingKey.Length);
-
-            // Decrypt the wrapped key
-            var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-            return DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
-        }
-
-        /// <summary>
-        /// Creates a stanza for the recipient asynchronously.
-        /// </summary>
-        /// <param name="fileKey">The file key to wrap.</param>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A task that represents the asynchronous operation. The task result contains a stanza with the wrapped file key.</returns>
-        /// <exception cref="ArgumentException">Thrown when the file key is invalid.</exception>
-        /// <exception cref="ArgumentNullException">Thrown when the file key is null.</exception>
-        public Task<Stanza> CreateStanzaAsync(byte[] fileKey, CancellationToken cancellationToken = default)
-        {
-            // Since X25519 operations are relatively fast and don't have async APIs,
-            // we can just wrap the synchronous method in a Task
-            return Task.Run(() => CreateStanza(fileKey), cancellationToken);
-        }
-
-        /// <summary>
-        /// Unwraps a file key from a stanza asynchronously.
-        /// </summary>
-        /// <param name="stanza">The stanza containing the wrapped file key.</param>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A task that represents the asynchronous operation. The task result contains the unwrapped file key, or null if the recipient cannot unwrap the file key.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when the stanza is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when the stanza is invalid.</exception>
-        public Task<byte[]?> UnwrapKeyAsync(Stanza stanza, CancellationToken cancellationToken = default)
-        {
-            // Since X25519 operations are relatively fast and don't have async APIs,
-            // we can just wrap the synchronous method in a Task
-            return Task.Run(() => UnwrapKey(stanza), cancellationToken);
-        }
+    public static X25519Recipient FromPrivateKey(byte[] privateKey)
+    {
+        if (privateKey == null) throw new ArgumentNullException(nameof(privateKey));
+        if (privateKey.Length != X25519.KeySize) throw new AgeKeyException($"Private key must be {X25519.KeySize} bytes");
+        var publicKey = X25519.GetPublicKeyFromPrivateKey(privateKey);
+        return new X25519Recipient(publicKey, privateKey);
     }
 }

@@ -1,201 +1,129 @@
-using System;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using DotAge.Core.Crypto;
+using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
+using DotAge.Core.Utils;
 
-namespace DotAge.Core.Recipients
+namespace DotAge.Core.Recipients;
+
+/// <summary>
+///     Scrypt recipient implementation for age encryption with passphrase.
+/// </summary>
+public class ScryptRecipient : IRecipient
 {
-    /// <summary>
-    /// Represents a scrypt recipient in the age encryption system.
-    /// </summary>
-    public class ScryptRecipient : IRecipient
+    private const int DefaultWorkFactor = 18;
+    private const int MaxWorkFactor = 22;
+    private const string ScryptLabel = "age-encryption.org/v1/scrypt";
+    private readonly string _passphrase;
+    private readonly byte[]? _salt;
+    private readonly int _workFactor;
+
+    public ScryptRecipient(string passphrase)
     {
-        // The type of the recipient
-        public string Type => "scrypt";
+        if (string.IsNullOrEmpty(passphrase)) throw new AgeKeyException("Passphrase cannot be null or empty");
+        _passphrase = passphrase;
+        _salt = null;
+        _workFactor = DefaultWorkFactor;
+    }
 
-        // The passphrase of the recipient
-        private readonly string _passphrase;
+    public ScryptRecipient(string passphrase, byte[] salt)
+    {
+        if (string.IsNullOrEmpty(passphrase)) throw new AgeKeyException("Passphrase cannot be null or empty");
+        if (salt == null || salt.Length == 0) throw new AgeKeyException("Salt cannot be null or empty");
+        
+        _passphrase = passphrase;
+        _salt = salt;
+        _workFactor = DefaultWorkFactor;
+    }
 
-        // The salt of the recipient (for unwrapping)
-        private readonly byte[]? _salt;
+    public ScryptRecipient(string passphrase, int workFactor)
+    {
+        if (string.IsNullOrEmpty(passphrase)) throw new AgeKeyException("Passphrase cannot be null or empty");
+        if (workFactor < 1 || workFactor > MaxWorkFactor) throw new AgeKeyException($"Work factor must be between 1 and {MaxWorkFactor}");
+        
+        _passphrase = passphrase;
+        _salt = null;
+        _workFactor = workFactor;
+    }
 
-        /// <summary>
-        /// Validates a file key.
-        /// </summary>
-        /// <param name="fileKey">The file key to validate.</param>
-        /// <exception cref="ArgumentException">Thrown when the file key is invalid.</exception>
-        private static void ValidateFileKey(byte[] fileKey)
+    public string Type => "scrypt";
+
+    public Stanza CreateStanza(byte[] fileKey)
+    {
+        ValidationUtils.ValidateFileKey(fileKey);
+
+        // Generate a random salt (16 bytes as per age spec)
+        var salt = RandomUtils.GenerateSalt(16);
+
+        // Create the salt with label prefix as per age spec
+        var labeledSalt = new byte[ScryptLabel.Length + salt.Length];
+        Encoding.ASCII.GetBytes(ScryptLabel).CopyTo(labeledSalt, 0);
+        salt.CopyTo(labeledSalt, ScryptLabel.Length);
+
+        // Derive the wrapping key from the passphrase and labeled salt
+        var wrappingKey = Scrypt.DeriveKey(_passphrase, labeledSalt, _workFactor);
+
+        // Encrypt the file key with the wrapping key
+        var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
+        var wrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
+
+        // Create the stanza with two arguments: salt and work factor
+        var stanza = new Stanza(Type);
+        stanza.Arguments.Add(Base64Utils.EncodeToString(salt));
+        stanza.Arguments.Add(_workFactor.ToString());
+        stanza.Body = wrappedKey;
+
+        return stanza;
+    }
+
+    public byte[]? UnwrapKey(Stanza stanza)
+    {
+        ValidationUtils.ValidateStanza(stanza, Type, 2);
+
+        // Extract the salt and work factor
+        var salt = Base64Utils.DecodeString(stanza.Arguments[0]);
+        if (salt.Length != 16)
+            return null; // Invalid salt length
+
+        if (!int.TryParse(stanza.Arguments[1], out var workFactor))
+            return null; // Invalid work factor
+
+        if (workFactor > MaxWorkFactor || workFactor <= 0)
+            return null; // Work factor too large or invalid
+
+        var wrappedKey = stanza.Body;
+
+        // Validate the encrypted file key size (16 bytes file key + 16 bytes tag = 32 bytes)
+        if (wrappedKey.Length != 32)
+            return null; // Invalid encrypted file key size
+
+        // Create the salt with label prefix as per age spec
+        var labeledSalt = new byte[ScryptLabel.Length + salt.Length];
+        Encoding.ASCII.GetBytes(ScryptLabel).CopyTo(labeledSalt, 0);
+        salt.CopyTo(labeledSalt, ScryptLabel.Length);
+
+        // Derive the wrapping key from the passphrase and labeled salt
+        var wrappingKey = Scrypt.DeriveKey(_passphrase, labeledSalt, workFactor);
+
+        // Decrypt the wrapped key
+        try
         {
-            if (fileKey == null || fileKey.Length != DotAge.Core.Crypto.ChaCha20Poly1305.KeySize)
-                throw new ArgumentException($"File key must be {DotAge.Core.Crypto.ChaCha20Poly1305.KeySize} bytes", nameof(fileKey));
-        }
-
-        /// <summary>
-        /// Validates a stanza.
-        /// </summary>
-        /// <param name="stanza">The stanza to validate.</param>
-        /// <exception cref="ArgumentNullException">Thrown when the stanza is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when the stanza is invalid.</exception>
-        private void ValidateStanza(Stanza stanza)
-        {
-            if (stanza == null)
-                throw new ArgumentNullException(nameof(stanza));
-
-            if (stanza.Type != Type)
-                throw new ArgumentException($"Stanza type must be {Type}", nameof(stanza));
-
-            if (stanza.Arguments.Count != 1)
-                throw new ArgumentException("Stanza must have exactly one argument", nameof(stanza));
-
-            if (stanza.Body.Count < 1)
-                throw new ArgumentException("Stanza must have at least one body line", nameof(stanza));
-        }
-
-        /// <summary>
-        /// Creates a new scrypt recipient with the specified passphrase.
-        /// </summary>
-        /// <param name="passphrase">The passphrase of the recipient.</param>
-        public ScryptRecipient(string passphrase)
-        {
-            if (string.IsNullOrEmpty(passphrase))
-                throw new ArgumentException("Passphrase cannot be null or empty", nameof(passphrase));
-
-            _passphrase = passphrase;
-            _salt = null;
-        }
-
-        /// <summary>
-        /// Creates a new scrypt recipient with the specified passphrase and salt.
-        /// </summary>
-        /// <param name="passphrase">The passphrase of the recipient.</param>
-        /// <param name="salt">The salt of the recipient.</param>
-        public ScryptRecipient(string passphrase, byte[] salt)
-        {
-            if (string.IsNullOrEmpty(passphrase))
-                throw new ArgumentException("Passphrase cannot be null or empty", nameof(passphrase));
-
-            if (salt == null || salt.Length == 0)
-                throw new ArgumentException("Salt cannot be null or empty", nameof(salt));
-
-            _passphrase = passphrase;
-            _salt = salt;
-        }
-
-        /// <summary>
-        /// Creates a stanza for the recipient.
-        /// </summary>
-        /// <param name="fileKey">The file key to wrap.</param>
-        /// <returns>A stanza containing the wrapped file key.</returns>
-        public Stanza CreateStanza(byte[] fileKey)
-        {
-            ValidateFileKey(fileKey);
-
-            // Generate a random salt
-            var salt = Scrypt.GenerateSalt();
-
-            // Derive the wrapping key from the passphrase and salt
-            var wrappingKey = Scrypt.DeriveKey(_passphrase, salt);
-
-            // Encrypt the file key with the wrapping key
             var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-            var wrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
-
-            // Create the stanza
-            var stanza = new Stanza(Type);
-            stanza.Arguments.Add(Convert.ToBase64String(salt));
-            stanza.Body.Add(Convert.ToBase64String(wrappedKey));
-
-            return stanza;
+            return DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
         }
-
-        /// <summary>
-        /// Creates a stanza for the recipient asynchronously.
-        /// </summary>
-        /// <param name="fileKey">The file key to wrap.</param>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A task that represents the asynchronous operation. The task result contains a stanza with the wrapped file key.</returns>
-        public async Task<Stanza> CreateStanzaAsync(byte[] fileKey, CancellationToken cancellationToken = default)
+        catch (CryptographicException)
         {
-            ValidateFileKey(fileKey);
-
-            // Generate a random salt
-            var salt = await Scrypt.GenerateSaltAsync(Scrypt.DefaultSaltSize, cancellationToken);
-
-            // Derive the wrapping key from the passphrase and salt
-            var wrappingKey = await Scrypt.DeriveKeyAsync(_passphrase, salt, cancellationToken: cancellationToken);
-
-            // Encrypt the file key with the wrapping key
-            var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-            var wrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
-
-            // Create the stanza
-            var stanza = new Stanza(Type);
-            stanza.Arguments.Add(Convert.ToBase64String(salt));
-            stanza.Body.Add(Convert.ToBase64String(wrappedKey));
-
-            return stanza;
+            // Decryption failed, likely due to an incorrect passphrase
+            return null;
         }
+    }
 
-        /// <summary>
-        /// Unwraps a file key from a stanza.
-        /// </summary>
-        /// <param name="stanza">The stanza containing the wrapped file key.</param>
-        /// <returns>The unwrapped file key, or null if the recipient cannot unwrap the file key.</returns>
-        public byte[]? UnwrapKey(Stanza stanza)
-        {
-            ValidateStanza(stanza);
-
-            // Extract the salt and wrapped key
-            var salt = _salt ?? Convert.FromBase64String(stanza.Arguments[0]);
-            var wrappedKey = Convert.FromBase64String(stanza.Body[0]);
-
-            // Derive the wrapping key from the passphrase and salt
-            var wrappingKey = Scrypt.DeriveKey(_passphrase, salt);
-
-            // Decrypt the wrapped key
-            try
-            {
-                var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-                return DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
-            }
-            catch (CryptographicException)
-            {
-                // Decryption failed, likely due to an incorrect passphrase
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Unwraps a file key from a stanza asynchronously.
-        /// </summary>
-        /// <param name="stanza">The stanza containing the wrapped file key.</param>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A task that represents the asynchronous operation. The task result contains the unwrapped file key, or null if the recipient cannot unwrap the file key.</returns>
-        public async Task<byte[]?> UnwrapKeyAsync(Stanza stanza, CancellationToken cancellationToken = default)
-        {
-            ValidateStanza(stanza);
-
-            // Extract the salt and wrapped key
-            var salt = _salt ?? Convert.FromBase64String(stanza.Arguments[0]);
-            var wrappedKey = Convert.FromBase64String(stanza.Body[0]);
-
-            // Derive the wrapping key from the passphrase and salt
-            var wrappingKey = await Scrypt.DeriveKeyAsync(_passphrase, salt, cancellationToken: cancellationToken);
-
-            // Decrypt the wrapped key
-            try
-            {
-                var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-                return DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
-            }
-            catch (CryptographicException)
-            {
-                // Decryption failed, likely due to an incorrect passphrase
-                return null;
-            }
-        }
+    public static ScryptRecipient FromPassphrase(string passphrase, int workFactor = 18)
+    {
+        if (string.IsNullOrEmpty(passphrase)) throw new AgeKeyException("Passphrase cannot be null or empty");
+        if (workFactor < 1 || workFactor > MaxWorkFactor) throw new AgeKeyException($"Work factor must be between 1 and {MaxWorkFactor}");
+        
+        return new ScryptRecipient(passphrase, workFactor);
     }
 }

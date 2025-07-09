@@ -1,146 +1,99 @@
-using System;
-using Curve25519.NetCore;
+using System.Security.Cryptography;
+using DotAge.Core.Utils;
+using DotAge.Core.Exceptions;
 
-namespace DotAge.Core.Crypto
+namespace DotAge.Core.Crypto;
+
+/// <summary>
+///     Provides X25519 key generation and key agreement functionality using Curve25519.NetCore.
+/// </summary>
+public class X25519
 {
+    // X25519 key size in bytes
+    public const int KeySize = 32;
+
+    // X25519 public key prefix in age format
+    public const string PublicKeyPrefix = "age1";
+
+    // X25519 private key prefix in age format
+    public const string PrivateKeyPrefix = "AGE-SECRET-KEY-";
+
     /// <summary>
-    /// Provides X25519 key generation and key agreement functionality.
+    ///     Generates a new X25519 key pair using Curve25519.NetCore.
     /// </summary>
-    public class X25519
+    /// <returns>A tuple containing the private and public keys as byte arrays.</returns>
+    public static (byte[] privateKey, byte[] publicKey) GenerateKeyPair()
     {
-        // X25519 key size in bytes
-        public const int KeySize = 32;
+        // Use Curve25519.NetCore to generate a key pair
+        var privateKey = new byte[KeySize];
+        var publicKey = new byte[KeySize];
 
-        // X25519 public key prefix in age format
-        public const string PublicKeyPrefix = "age1";
+        // Generate random private key using cryptographically secure random number generator
+        privateKey = RandomUtils.GenerateRandomBytes(KeySize);
 
-        // X25519 private key prefix in age format
-        public const string PrivateKeyPrefix = "AGE-SECRET-KEY-";
+        // Clamp the private key as per RFC 7748
+        ClampPrivateKey(privateKey);
 
-        /// <summary>
-        /// Generates a new X25519 key pair.
-        /// </summary>
-        /// <returns>A tuple containing the private and public keys as byte arrays.</returns>
-        public static (byte[] privateKey, byte[] publicKey) GenerateKeyPair()
-        {
-            // Use Curve25519.NetCore to generate a key pair
-            var privateKey = new byte[KeySize];
-            var publicKey = new byte[KeySize];
+        // Generate public key from private key
+        var curve25519 = new Curve25519.NetCore.Curve25519();
+        publicKey = curve25519.GetPublicKey(privateKey);
 
-            // Generate random private key
-            var random = new Random();
-            random.NextBytes(privateKey);
+        return (privateKey, publicKey);
+    }
 
-            // Generate public key from private key
-            var curve25519 = new Curve25519.NetCore.Curve25519();
-            publicKey = curve25519.GetPublicKey(privateKey);
+    /// <summary>
+    ///     Performs X25519 key agreement between a private key and a public key using Curve25519.NetCore.
+    /// </summary>
+    /// <param name="privateKey">The private key as a byte array.</param>
+    /// <param name="publicKey">The public key as a byte array.</param>
+    /// <returns>The shared secret as a byte array.</returns>
+    public static byte[] KeyAgreement(byte[] privateKey, byte[] publicKey)
+    {
+        if (privateKey == null || privateKey.Length != KeySize)
+            throw new AgeKeyException($"Private key must be {KeySize} bytes");
 
-            return (privateKey, publicKey);
-        }
+        if (publicKey == null || publicKey.Length != KeySize)
+            throw new AgeKeyException($"Public key must be {KeySize} bytes");
 
-        /// <summary>
-        /// Performs X25519 key agreement between a private key and a public key.
-        /// </summary>
-        /// <param name="privateKey">The private key as a byte array.</param>
-        /// <param name="publicKey">The public key as a byte array.</param>
-        /// <returns>The shared secret as a byte array.</returns>
-        public static byte[] KeyAgreement(byte[] privateKey, byte[] publicKey)
-        {
-            if (privateKey == null || privateKey.Length != KeySize)
-                throw new ArgumentException($"Private key must be {KeySize} bytes", nameof(privateKey));
+        // Clamp the private key as per RFC 7748
+        var clampedKey = new byte[KeySize];
+        Buffer.BlockCopy(privateKey, 0, clampedKey, 0, KeySize);
+        ClampPrivateKey(clampedKey);
 
-            if (publicKey == null || publicKey.Length != KeySize)
-                throw new ArgumentException($"Public key must be {KeySize} bytes", nameof(publicKey));
+        // Use Curve25519.NetCore for key agreement
+        var curve25519 = new Curve25519.NetCore.Curve25519();
+        var sharedSecret = curve25519.GetSharedSecret(clampedKey, publicKey);
 
-            // Use Curve25519.NetCore to perform key agreement
-            var curve25519 = new Curve25519.NetCore.Curve25519();
-            var sharedSecret = curve25519.GetSharedSecret(privateKey, publicKey);
+        return sharedSecret;
+    }
 
-            return sharedSecret;
-        }
+    /// <summary>
+    ///     Derives the public key from a given private key using Curve25519.NetCore.
+    /// </summary>
+    /// <param name="privateKey">The private key as a byte array.</param>
+    /// <returns>The public key as a byte array.</returns>
+    public static byte[] GetPublicKeyFromPrivateKey(byte[] privateKey)
+    {
+        if (privateKey == null || privateKey.Length != KeySize)
+            throw new AgeKeyException($"Private key must be {KeySize} bytes");
+        ClampPrivateKey(privateKey);
+        var curve25519 = new Curve25519.NetCore.Curve25519();
+        return curve25519.GetPublicKey(privateKey);
+    }
 
-        /// <summary>
-        /// Encodes a public key as an age recipient string.
-        /// </summary>
-        /// <param name="publicKey">The public key as a byte array.</param>
-        /// <returns>The encoded public key as a string.</returns>
-        public static string EncodePublicKey(byte[] publicKey)
-        {
-            if (publicKey == null || publicKey.Length != KeySize)
-                throw new ArgumentException($"Public key must be {KeySize} bytes", nameof(publicKey));
+    /// <summary>
+    ///     Clamps a private key as specified in RFC 7748.
+    ///     This ensures the key is properly formatted for X25519 operations.
+    /// </summary>
+    /// <param name="privateKey">The private key to clamp (modified in place).</param>
+    private static void ClampPrivateKey(byte[] privateKey)
+    {
+        if (privateKey == null || privateKey.Length != KeySize)
+            throw new AgeKeyException($"Private key must be {KeySize} bytes");
 
-            // Encode the public key in Base64
-            var base64 = Convert.ToBase64String(publicKey);
-
-            // Return the encoded public key with the prefix
-            return $"{PublicKeyPrefix}{base64}";
-        }
-
-        /// <summary>
-        /// Decodes an age recipient string to a public key.
-        /// </summary>
-        /// <param name="encodedPublicKey">The encoded public key as a string.</param>
-        /// <returns>The public key as a byte array.</returns>
-        public static byte[] DecodePublicKey(string encodedPublicKey)
-        {
-            if (string.IsNullOrEmpty(encodedPublicKey))
-                throw new ArgumentException("Encoded public key cannot be null or empty", nameof(encodedPublicKey));
-
-            if (!encodedPublicKey.StartsWith(PublicKeyPrefix))
-                throw new ArgumentException($"Encoded public key must start with {PublicKeyPrefix}", nameof(encodedPublicKey));
-
-            // Remove the prefix
-            var base64 = encodedPublicKey.Substring(PublicKeyPrefix.Length);
-
-            // Decode the Base64 string
-            var publicKey = Convert.FromBase64String(base64);
-
-            if (publicKey.Length != KeySize)
-                throw new ArgumentException($"Decoded public key must be {KeySize} bytes", nameof(encodedPublicKey));
-
-            return publicKey;
-        }
-
-        /// <summary>
-        /// Encodes a private key as an age secret key string.
-        /// </summary>
-        /// <param name="privateKey">The private key as a byte array.</param>
-        /// <returns>The encoded private key as a string.</returns>
-        public static string EncodePrivateKey(byte[] privateKey)
-        {
-            if (privateKey == null || privateKey.Length != KeySize)
-                throw new ArgumentException($"Private key must be {KeySize} bytes", nameof(privateKey));
-
-            // Encode the private key in Base64
-            var base64 = Convert.ToBase64String(privateKey);
-
-            // Return the encoded private key with the prefix
-            return $"{PrivateKeyPrefix}{base64}";
-        }
-
-        /// <summary>
-        /// Decodes an age secret key string to a private key.
-        /// </summary>
-        /// <param name="encodedPrivateKey">The encoded private key as a string.</param>
-        /// <returns>The private key as a byte array.</returns>
-        public static byte[] DecodePrivateKey(string encodedPrivateKey)
-        {
-            if (string.IsNullOrEmpty(encodedPrivateKey))
-                throw new ArgumentException("Encoded private key cannot be null or empty", nameof(encodedPrivateKey));
-
-            if (!encodedPrivateKey.StartsWith(PrivateKeyPrefix))
-                throw new ArgumentException($"Encoded private key must start with {PrivateKeyPrefix}", nameof(encodedPrivateKey));
-
-            // Remove the prefix
-            var base64 = encodedPrivateKey.Substring(PrivateKeyPrefix.Length);
-
-            // Decode the Base64 string
-            var privateKey = Convert.FromBase64String(base64);
-
-            if (privateKey.Length != KeySize)
-                throw new ArgumentException($"Decoded private key must be {KeySize} bytes", nameof(encodedPrivateKey));
-
-            return privateKey;
-        }
+        // Clamp the private key as per RFC 7748
+        privateKey[0] &= 248; // Clear bits 0, 1, 2
+        privateKey[31] &= 127; // Clear bit 255
+        privateKey[31] |= 64; // Set bit 254
     }
 }

@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotAge.Tests", "DotAge.Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotAge.KeyGen", "DotAge.KeyGen\DotAge.KeyGen.csproj", "{A8B6F009-1BC1-4DE8-93FC-B664BF7AB59C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotAge.Cli", "DotAge.Cli\DotAge.Cli.csproj", "{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,18 @@ Global
 		{A8B6F009-1BC1-4DE8-93FC-B664BF7AB59C}.Release|x64.Build.0 = Release|Any CPU
 		{A8B6F009-1BC1-4DE8-93FC-B664BF7AB59C}.Release|x86.ActiveCfg = Release|Any CPU
 		{A8B6F009-1BC1-4DE8-93FC-B664BF7AB59C}.Release|x86.Build.0 = Release|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Debug|x64.Build.0 = Debug|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Debug|x86.Build.0 = Debug|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Release|x64.ActiveCfg = Release|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Release|x64.Build.0 = Release|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Release|x86.ActiveCfg = Release|Any CPU
+		{B9C7F009-1BC1-4DE8-93FC-B664BF7AB59D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

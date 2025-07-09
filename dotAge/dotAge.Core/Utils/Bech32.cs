@@ -1,0 +1,214 @@
+using System;
+using System.Text;
+using System.Collections.Generic;
+using DotAge.Core.Exceptions;
+
+namespace DotAge.Core.Utils;
+
+/// <summary>
+///     Bech32 encoding and decoding implementation.
+///     Based on the Go implementation from the age project.
+/// </summary>
+public static class Bech32
+{
+    private static readonly string Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+    private static readonly uint[] Generator = { 0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3 };
+
+    /// <summary>
+    ///     Encodes data to Bech32 format.
+    /// </summary>
+    /// <param name="hrp">The human-readable part.</param>
+    /// <param name="data">The data to encode.</param>
+    /// <returns>The Bech32 encoded string.</returns>
+    public static string Encode(string hrp, byte[] data)
+    {
+        if (data == null) throw new ArgumentNullException(nameof(data));
+        if (string.IsNullOrEmpty(hrp)) throw new AgeFormatException("HRP cannot be null or empty");
+
+        // Convert 8-bit data to 5-bit
+        var values = ConvertBits(data, 8, 5, true);
+        if (values == null) throw new AgeFormatException("Invalid data for encoding");
+
+        // Validate HRP
+        foreach (var c in hrp)
+        {
+            if (c < 33 || c > 126)
+                throw new AgeFormatException($"Invalid HRP character: {c}");
+        }
+
+        var isLower = hrp.ToLowerInvariant() == hrp;
+        var lowerHrp = hrp.ToLowerInvariant();
+
+        var ret = new StringBuilder();
+        ret.Append(lowerHrp);
+        ret.Append('1');
+
+        // Add data part
+        foreach (var p in values)
+        {
+            ret.Append(Charset[p]);
+        }
+
+        // Add checksum
+        var checksum = CreateChecksum(lowerHrp, values);
+        foreach (var p in checksum)
+        {
+            ret.Append(Charset[p]);
+        }
+
+        return isLower ? ret.ToString() : ret.ToString().ToUpperInvariant();
+    }
+
+    /// <summary>
+    ///     Decodes a Bech32 string.
+    /// </summary>
+    /// <param name="s">The Bech32 string to decode.</param>
+    /// <returns>A tuple containing the HRP and decoded data.</returns>
+    public static (string hrp, byte[] data) Decode(string s)
+    {
+        if (string.IsNullOrEmpty(s)) throw new AgeFormatException("String cannot be null or empty");
+
+        // Check for mixed case
+        if (s.ToLowerInvariant() != s && s.ToUpperInvariant() != s)
+            throw new AgeFormatException("Mixed case not allowed");
+
+        var pos = s.LastIndexOf('1');
+        if (pos < 1 || pos + 7 > s.Length)
+            throw new AgeFormatException("Separator '1' at invalid position");
+
+        var hrp = s.Substring(0, pos);
+
+        // Validate HRP characters
+        foreach (var c in hrp)
+        {
+            if (c < 33 || c > 126)
+                throw new AgeFormatException($"Invalid character in human-readable part: {c}");
+        }
+
+        var lowerS = s.ToLowerInvariant();
+        var data = new List<byte>();
+
+        // Decode data part
+        for (var i = pos + 1; i < lowerS.Length; i++)
+        {
+            var d = Charset.IndexOf(lowerS[i]);
+            if (d == -1)
+                throw new AgeFormatException($"Invalid character in data part: {lowerS[i]}");
+            data.Add((byte)d);
+        }
+
+        // Verify checksum
+        if (!VerifyChecksum(hrp, data.ToArray()))
+            throw new AgeFormatException("Invalid checksum");
+
+        // Convert 5-bit data back to 8-bit, only for the data part (excluding the 6 checksum bytes)
+        var result = ConvertBits(data.ToArray(), 5, 8, false, data.Count - 6);
+        if (result == null)
+            throw new AgeFormatException("Invalid data conversion");
+
+        return (hrp, result);
+    }
+
+    private static uint Polymod(byte[] values)
+    {
+        var chk = 1u;
+        foreach (var v in values)
+        {
+            var top = chk >> 25;
+            chk = (chk & 0x1ffffff) << 5;
+            chk = chk ^ v;
+            for (var i = 0; i < 5; i++)
+            {
+                var bit = (top >> i) & 1;
+                if (bit == 1)
+                {
+                    chk ^= Generator[i];
+                }
+            }
+        }
+        return chk;
+    }
+
+    private static byte[] HrpExpand(string hrp)
+    {
+        var h = hrp.ToLowerInvariant();
+        var ret = new List<byte>();
+
+        foreach (var c in h)
+        {
+            ret.Add((byte)(c >> 5));
+        }
+        ret.Add(0);
+
+        foreach (var c in h)
+        {
+            ret.Add((byte)(c & 31));
+        }
+
+        return ret.ToArray();
+    }
+
+    private static bool VerifyChecksum(string hrp, byte[] data)
+    {
+        var values = new List<byte>();
+        values.AddRange(HrpExpand(hrp));
+        values.AddRange(data);
+        return Polymod(values.ToArray()) == 1;
+    }
+
+    private static byte[] CreateChecksum(string hrp, byte[] data)
+    {
+        var values = new List<byte>();
+        values.AddRange(HrpExpand(hrp));
+        values.AddRange(data);
+        values.AddRange(new byte[] { 0, 0, 0, 0, 0, 0 });
+
+        var mod = Polymod(values.ToArray()) ^ 1;
+        var ret = new byte[6];
+
+        for (var p = 0; p < ret.Length; p++)
+        {
+            var shift = 5 * (5 - p);
+            ret[p] = (byte)((mod >> shift) & 31);
+        }
+
+        return ret;
+    }
+
+    private static byte[]? ConvertBits(byte[] data, byte fromBits, byte toBits, bool pad, int? length = null)
+    {
+        var ret = new List<byte>();
+        var acc = 0u;
+        var bits = 0;
+        var maxv = (byte)((1 << toBits) - 1);
+        int dataLen = length ?? data.Length;
+        for (var idx = 0; idx < dataLen; idx++)
+        {
+            var value = data[idx];
+            if ((value >> fromBits) != 0)
+                return null; // Invalid data range
+            acc = (acc << fromBits) | value;
+            bits += fromBits;
+            while (bits >= toBits)
+            {
+                bits -= toBits;
+                ret.Add((byte)((acc >> bits) & maxv));
+            }
+        }
+        if (pad)
+        {
+            if (bits > 0)
+            {
+                ret.Add((byte)((acc << (toBits - bits)) & maxv));
+            }
+        }
+        else
+        {
+            if (bits >= fromBits)
+                return null; // Illegal zero padding
+            if (((acc << (toBits - bits)) & maxv) != 0)
+                return null; // Non-zero padding
+        }
+        return ret.ToArray();
+    }
+} 
