@@ -20,6 +20,8 @@ Age is a simple, modern, and secure file encryption tool and format. It features
 ## Project Structure
 
 - `DotAge.Core`: The core library implementing the age encryption system
+- `DotAge.Cli`: Command-line interface for encryption/decryption
+- `DotAge.KeyGen`: Command-line tool for key generation
 - `DotAge.Tests`: Tests for the core library
 
 ## Testing
@@ -46,6 +48,11 @@ For the passphrase tests to work, you will need a version of [expect](https://li
 ### Encrypting with X25519
 
 ```csharp
+using DotAge.Core;
+using DotAge.Core.Crypto;
+using DotAge.Core.Recipients;
+using System.Text;
+
 // Generate a key pair
 var (privateKey, publicKey) = X25519.GenerateKeyPair();
 
@@ -67,10 +74,14 @@ byte[] ciphertext = age.Encrypt(plaintext);
 ### Decrypting with X25519
 
 ```csharp
+using DotAge.Core;
+using DotAge.Core.Crypto;
+using DotAge.Core.Recipients;
+
 // Create an Age instance
 var age = new Age();
 
-// Add an identity
+// Add an identity (requires both public and private keys)
 var identity = new X25519Recipient(publicKey, privateKey);
 age.AddIdentity(identity);
 
@@ -81,9 +92,27 @@ age.DecryptFile("ciphertext.age", "plaintext.txt");
 byte[] decrypted = age.Decrypt(ciphertext);
 ```
 
+### Working with Key Files
+
+```csharp
+using DotAge.Core.Utils;
+
+// Parse a key file to get the keys
+var (privateKeyBytes, publicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes("key.txt");
+
+// Create recipient from public key
+var recipient = new X25519Recipient(publicKeyBytes);
+
+// Create identity from private key
+var identity = X25519Recipient.FromPrivateKey(privateKeyBytes);
+```
+
 ### Encrypting with a Passphrase
 
 ```csharp
+using DotAge.Core;
+using DotAge.Core.Recipients;
+
 // Create an Age instance
 var age = new Age();
 
@@ -93,20 +122,71 @@ age.AddRecipient(recipient);
 
 // Encrypt a file
 age.EncryptFile("plaintext.txt", "ciphertext.age");
+
+// Encrypt data
+byte[] plaintext = Encoding.UTF8.GetBytes("Hello, World!");
+byte[] ciphertext = age.Encrypt(plaintext);
 ```
 
 ### Decrypting with a Passphrase
 
 ```csharp
+using DotAge.Core;
+using DotAge.Core.Recipients;
+
 // Create an Age instance
 var age = new Age();
 
 // Add an identity
-var identity = new ScryptRecipient("passphrase");
+var identity = new ScryptIdentity("passphrase");
 age.AddIdentity(identity);
 
 // Decrypt a file
 age.DecryptFile("ciphertext.age", "plaintext.txt");
+
+// Decrypt data
+byte[] decrypted = age.Decrypt(ciphertext);
+```
+
+### Multiple Recipients
+
+```csharp
+using DotAge.Core;
+using DotAge.Core.Crypto;
+using DotAge.Core.Recipients;
+
+var age = new Age();
+
+// Add multiple X25519 recipients
+var (privateKey1, publicKey1) = X25519.GenerateKeyPair();
+var (privateKey2, publicKey2) = X25519.GenerateKeyPair();
+
+age.AddRecipient(new X25519Recipient(publicKey1));
+age.AddRecipient(new X25519Recipient(publicKey2));
+
+// Add a passphrase recipient
+age.AddRecipient(new ScryptRecipient("shared-passphrase"));
+
+// Encrypt - any of the recipients can decrypt
+byte[] ciphertext = age.Encrypt(plaintext);
+```
+
+### Key Generation
+
+```csharp
+using DotAge.Core.Crypto;
+using DotAge.Core.Utils;
+
+// Generate a new key pair
+var (privateKey, publicKey) = X25519.GenerateKeyPair();
+
+// Encode to age format
+string privateKeyAge = KeyFileUtils.EncodeAgeSecretKey(privateKey);
+string publicKeyAge = KeyFileUtils.EncodeAgePublicKey(publicKey);
+
+// Decode from age format
+byte[] decodedPrivateKey = KeyFileUtils.DecodeAgeSecretKey(privateKeyAge);
+byte[] decodedPublicKey = KeyFileUtils.DecodeAgePublicKey(publicKeyAge);
 ```
 
 ## Known Limitations
@@ -123,7 +203,6 @@ age.DecryptFile("ciphertext.age", "plaintext.txt");
 ## Future Improvements
 
 - Implement SSH recipients (RSA, Ed25519)
-- Add a CLI interface
 
 ## License
 
