@@ -1,6 +1,6 @@
 # DotAge - .NET Implementation of the age Encryption System
 
-This is a .NET implementation of the [age encryption system](https://age-encryption.org/), based on the following
+This is a .NET implementation of the [age encryption system](https://age-encryption.org/), referencing the following
 implementations:
 
 - Go: [FiloSottile/age](https://github.com/FiloSottile/age/tree/v1.2.1)
@@ -25,8 +25,11 @@ Age is a simple, modern, and secure file encryption tool and format. It features
 ## Testing
 
 The integration tests in `DotAge.Tests` validate the DotAge implementation against the
-reference [FiloSottile/age](https://github.com/FiloSottile/age) Golang implementation. To run these tests, you need to
-have the FiloSottile/age implementation installed on your system.
+reference [FiloSottile/age](https://github.com/FiloSottile/age) Golang implementation and [Rage](https://github.com/str4d/rage) rust implementation. To run these tests, you need to have the FiloSottile/age implementation and str4d/rage binaries installed.
+
+There is a stress test that can be run that will run random permutations of random data, you can run this by running `RUN_STRESS_TESTS=true dotnet test DotAge/DotAge.Tests/DotAge.Tests.csproj --filter "FullyQualifiedName~StressInteroperabilityTests"`
+
+For the passphrase tests to work, you will need a version of [expect](https://linux.die.net/man/1/expect) installed to be able to handle the terminal
 
 ## Features
 
