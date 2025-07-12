@@ -13,23 +13,23 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0 # Required for GitVersion to work correctly
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '9.0.x'
 
     - name: Install GitVersion
-      uses: gittools/actions/gitversion/setup@v0.10.2
+      uses: gittools/actions/gitversion/setup@v0.12.0
       with:
         versionSpec: '5.x'
 
     - name: Determine Version
       id: gitversion
-      uses: gittools/actions/gitversion/execute@v0.10.2
+      uses: gittools/actions/gitversion/execute@v0.12.0
       with:
         useConfigFile: true
 
@@ -102,14 +102,13 @@ jobs:
     - name: Test
       run: dotnet test DotAge/DotAge.sln --configuration Release --no-build --verbosity normal
 
-
     - name: Package
       run: |
         cd DotAge/DotAge.Core
         dotnet pack -c Release /p:NuspecFile=DotAge.Core.nuspec
 
     - name: Upload NuGet package as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: nuget-package
         path: DotAge/DotAge.Core/bin/Release/DotAge.${{ env.DOT_AGE_VERSION }}.nupkg

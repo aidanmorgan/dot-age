@@ -33,13 +33,6 @@
         <!-- Tags appear in the gallery and can be used for tag searches -->
         <tags>encryption age cryptography security x25519 chacha20poly1305 scrypt</tags>
 
-        <!-- Dependencies are automatically installed when the package is installed -->
-        <dependencies>
-            <group targetFramework="net9.0">
-                <dependency id="Curve25519.NetCore" version="1.0.0"/>
-            </group>
-        </dependencies>
-
         <!-- A readme file to be displayed when the package is installed -->
         <readme>docs\README.md</readme>
     </metadata>

@@ -225,13 +225,13 @@ Example:
 
             if (passphraseFlag)
             {
-                if (!await ConfigurePassphraseEncryption(age, logger))
+                if (!ConfigurePassphraseEncryption(age, logger))
                     return 1;
             }
             else
             {
                 // Add recipients from various sources
-                if (!await ConfigureRecipients(age, recipientFlags, recipientsFileFlags, identityFlags, logger))
+                if (!ConfigureRecipients(age, recipientFlags, recipientsFileFlags, identityFlags, logger))
                     return 1;
             }
 
@@ -299,7 +299,7 @@ Example:
     /// Configures passphrase encryption by prompting for a passphrase and adding a ScryptRecipient.
     /// </summary>
     /// <returns>True if successful, false otherwise.</returns>
-    private async Task<bool> ConfigurePassphraseEncryption(Age age, ILogger logger)
+    private bool ConfigurePassphraseEncryption(Age age, ILogger logger)
     {
         var passphrase = PromptForPassphrase(logger);
         if (string.IsNullOrEmpty(passphrase))
@@ -316,7 +316,7 @@ Example:
     /// Configures recipients from command line arguments, recipient files, and identity files.
     /// </summary>
     /// <returns>True if successful, false otherwise.</returns>
-    private async Task<bool> ConfigureRecipients(
+    private bool ConfigureRecipients(
         Age age,
         string[]? recipientFlags,
         string[]? recipientsFileFlags,
@@ -333,14 +333,14 @@ Example:
         // Add recipients from recipient files
         if (recipientsFileFlags?.Length > 0)
         {
-            if (!await AddRecipientsFromFiles(age, recipientsFileFlags, logger))
+            if (!AddRecipientsFromFiles(age, recipientsFileFlags, logger))
                 return false;
         }
 
         // Add recipients from identity files
         if (identityFlags?.Length > 0)
         {
-            if (!await AddRecipientsFromIdentityFiles(age, identityFlags, logger))
+            if (!AddRecipientsFromIdentityFiles(age, identityFlags, logger))
                 return false;
         }
 
@@ -374,7 +374,7 @@ Example:
     /// Adds recipients from recipient files.
     /// </summary>
     /// <returns>True if successful, false otherwise.</returns>
-    private async Task<bool> AddRecipientsFromFiles(Age age, string[] recipientsFileFlags, ILogger logger)
+    private bool AddRecipientsFromFiles(Age age, string[] recipientsFileFlags, ILogger logger)
     {
         foreach (var recipientsFile in recipientsFileFlags)
         {
@@ -407,7 +407,7 @@ Example:
     /// Adds recipients from identity files.
     /// </summary>
     /// <returns>True if successful, false otherwise.</returns>
-    private async Task<bool> AddRecipientsFromIdentityFiles(Age age, string[] identityFlags, ILogger logger)
+    private bool AddRecipientsFromIdentityFiles(Age age, string[] identityFlags, ILogger logger)
     {
         foreach (var identityFile in identityFlags)
         {
@@ -471,7 +471,7 @@ Example:
 
             if (isPassphraseEncrypted)
             {
-                if (!await ConfigurePassphraseDecryption(age, logger))
+                if (!ConfigurePassphraseDecryption(age, logger))
                     return 1;
             }
             else
@@ -481,7 +481,7 @@ Example:
                     return 1;
 
                 // Add identities from files
-                if (!await AddIdentitiesFromFilesAsync(age, identityFlags!, logger))
+                if (!AddIdentitiesFromFilesAsync(age, identityFlags!, logger))
                     return 1;
             }
 
@@ -532,7 +532,7 @@ Example:
     /// <param name="age">Age instance to configure.</param>
     /// <param name="logger">Logger instance.</param>
     /// <returns>True if successful, false otherwise.</returns>
-    private async Task<bool> ConfigurePassphraseDecryption(Age age, ILogger logger)
+    private bool ConfigurePassphraseDecryption(Age age, ILogger logger)
     {
         var passphrase = PromptForDecryptionPassphrase();
         if (string.IsNullOrEmpty(passphrase))
@@ -553,7 +553,7 @@ Example:
     /// <param name="logger">Logger instance.</param>
     /// <returns>True if all identities were added successfully, false otherwise.</returns>
     /// <exception cref="ArgumentNullException">Thrown when age or identityFiles is null.</exception>
-    private async Task<bool> AddIdentitiesFromFilesAsync(Age age, string[] identityFiles, ILogger logger)
+    private bool AddIdentitiesFromFilesAsync(Age age, string[] identityFiles, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(age);
         ArgumentNullException.ThrowIfNull(identityFiles);
@@ -576,7 +576,7 @@ Example:
             try
             {
                 var (privateKeyBytes, publicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(identityFile);
-                age.AddIdentity(new X25519Recipient(publicKeyBytes, privateKeyBytes));
+                age.AddIdentity(new X25519Recipient(privateKeyBytes, publicKeyBytes));
             }
             catch (Exception ex)
             {
@@ -696,16 +696,12 @@ Example:
     /// <returns>A secure passphrase consisting of 10 random words from the BIP39 wordlist.</returns>
     private string GenerateSecurePassphrase()
     {
-        using var rng = RandomNumberGenerator.Create();
         var words = new List<string>(10);
-        var buffer = new byte[4]; // 4 bytes = 32 bits, enough for selecting from 2048 words
 
         // Generate 10 random words from the BIP39 wordlist (like age does)
         for (int i = 0; i < 10; i++)
         {
-            rng.GetBytes(buffer);
-            var value = BitConverter.ToUInt32(buffer, 0) % (uint)Bip39Wordlist.Length;
-            words.Add(Bip39Wordlist.GetWord((int)value));
+            words.Add(Bip39Wordlist.GetRandomWord(null));
         }
 
         return string.Join("-", words);

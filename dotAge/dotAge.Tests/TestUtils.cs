@@ -162,6 +162,8 @@ public static class TestUtils
             CreateNoWindow = true
         };
 
+        logger?.LogTrace("Invoking command: {Command} {Arguments}", command, arguments);
+
         using var process = new Process { StartInfo = startInfo };
         process.Start();
 
@@ -175,6 +177,10 @@ public static class TestUtils
         var error = await process.StandardError.ReadToEndAsync();
 
         await process.WaitForExitAsync();
+
+        logger?.LogTrace("Command stdout: {Stdout}", output);
+        logger?.LogTrace("Command stderr: {Stderr}", error);
+        logger?.LogTrace("Command exit code: {ExitCode}", process.ExitCode);
 
         return new CommandResult
         {

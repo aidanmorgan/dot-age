@@ -1,4 +1,7 @@
-using System.Security.Cryptography;
+using System;
+using System.Buffers;
+using System.IO;
+using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
@@ -6,121 +9,113 @@ using Microsoft.Extensions.Logging;
 namespace DotAge.Core.Crypto;
 
 /// <summary>
-///     Provides chunked encryption/decryption functionality matching the age implementation.
+///     Provides chunked encryption and decryption for age files.
+///     Implements the age file format specification.
 /// </summary>
 public static class ChunkedStream
 {
     private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ChunkedStream));
 
-    public const int ChunkSize = 64 * 1024; // 64KB
-    internal const int NonceSize = 12; // ChaCha20-Poly1305 nonce size
-    internal const byte LastChunkFlag = 0x01;
-    internal const int EncChunkSize = ChunkSize + 16; // ChunkSize + ChaCha20-Poly1305 overhead
+    public const int ChunkSize = 65536; // 64KB chunks
 
     /// <summary>
-    ///     Creates a new ChunkedStreamWriter for encryption.
+    ///     Creates a ChunkedStreamWriter for encrypting data in chunks.
     /// </summary>
     /// <param name="key">The encryption key.</param>
-    /// <param name="destination">The destination stream.</param>
-    /// <returns>A new ChunkedStreamWriter.</returns>
-    public static ChunkedStreamWriter CreateWriter(byte[] key, Stream destination)
+    /// <param name="output">The output stream.</param>
+    /// <returns>A ChunkedStreamWriter instance.</returns>
+    public static ChunkedStreamWriter CreateWriter(byte[] key, Stream output)
     {
-        if (key == null) throw new ArgumentNullException(nameof(key));
-        if (destination == null) throw new ArgumentNullException(nameof(destination));
-        if (key.Length != ChaCha20Poly1305.KeySize)
-            throw new AgeCryptoException($"Key must be {ChaCha20Poly1305.KeySize} bytes");
-
-        Logger.LogTrace("Creating ChunkedStreamWriter with key: {KeyHex}", BitConverter.ToString(key));
-        return new ChunkedStreamWriter(key, destination);
+        return new ChunkedStreamWriter(key, output);
     }
 
     /// <summary>
-    ///     Creates a new ChunkedStreamReader for decryption.
+    ///     Creates a ChunkedStreamReader for decrypting data in chunks.
     /// </summary>
     /// <param name="key">The decryption key.</param>
-    /// <param name="source">The source stream.</param>
-    /// <returns>A new ChunkedStreamReader.</returns>
-    public static ChunkedStreamReader CreateReader(byte[] key, Stream source)
+    /// <param name="input">The input stream.</param>
+    /// <returns>A ChunkedStreamReader instance.</returns>
+    public static ChunkedStreamReader CreateReader(byte[] key, Stream input)
     {
-        if (key == null) throw new ArgumentNullException(nameof(key));
-        if (source == null) throw new ArgumentNullException(nameof(source));
-        if (key.Length != ChaCha20Poly1305.KeySize)
-            throw new AgeCryptoException($"Key must be {ChaCha20Poly1305.KeySize} bytes");
-
-        Logger.LogTrace("Creating ChunkedStreamReader with key: {KeyHex}", BitConverter.ToString(key));
-        return new ChunkedStreamReader(key, source);
+        return new ChunkedStreamReader(key, input);
     }
 
     /// <summary>
-    ///     Increments the nonce counter (first 11 bytes) for the next chunk, matching age's incNonce.
+    ///     Increments a 12-byte nonce in little-endian format.
+    ///     Following age spec: increment the first 11 bytes (88-bit counter), leave byte 11 for last chunk flag.
+    ///     Reference: https://github.com/FiloSottile/age/blob/main/internal/stream/stream.go#L109 and https://github.com/str4d/rage/blob/master/age-core/src/stream.rs
     /// </summary>
-    /// <param name="nonce">The nonce to increment.</param>
-    internal static void IncrementNonce(byte[] nonce)
+    /// <param name="nonce">The nonce to increment (modified in place).</param>
+    private static void IncrementNonce(byte[] nonce)
     {
-        // Increment from right to left, stopping at first non-zero (matching age's incNonce)
-        for (var i = nonce.Length - 2; i >= 0; i--)
+        // Increment the first 11 bytes (88-bit counter) as per age spec
+        // Go implementation: for i := len(nonce) - 2; i >= 0; i--
+        for (int i = nonce.Length - 2; i >= 0; i--)
         {
             nonce[i]++;
             if (nonce[i] != 0)
                 break;
             if (i == 0)
-                throw new AgeCryptoException("stream: chunk counter wrapped around");
+            {
+                // The counter is 88 bits, this is unreachable in practice
+                throw new InvalidOperationException("Chunk counter wrapped around");
+            }
         }
     }
 
     /// <summary>
-    ///     Sets the last chunk flag in the nonce, matching age's setLastChunkFlag.
+    ///     Sets the last chunk flag in a nonce.
+    ///     Reference: https://github.com/FiloSottile/age/blob/main/internal/stream/stream.go#L123
     /// </summary>
-    /// <param name="nonce">The nonce to modify.</param>
-    internal static void SetLastChunkFlag(byte[] nonce)
+    /// <param name="nonce">The nonce to modify (modified in place).</param>
+    private static void SetLastChunkFlag(byte[] nonce)
     {
-        nonce[^1] = LastChunkFlag;
+        nonce[11] = 0x01; // Set last chunk flag as per age spec
     }
 
     /// <summary>
-    ///     Checks if the nonce is all zeros, matching age's nonceIsZero.
+    ///     Checks if a nonce is all zeros.
     /// </summary>
     /// <param name="nonce">The nonce to check.</param>
     /// <returns>True if the nonce is all zeros.</returns>
-    internal static bool IsNonceZero(byte[] nonce)
+    private static bool IsNonceZero(byte[] nonce)
     {
-        for (var i = 0; i < nonce.Length; i++)
+        for (int i = 0; i < nonce.Length; i++)
+        {
             if (nonce[i] != 0)
                 return false;
-        return true;
     }
+        return true;
 }
 
 /// <summary>
-///     Writer for chunked encryption, matching age implementation.
+    ///     ChunkedStreamWriter for encrypting data in chunks.
 /// </summary>
 public class ChunkedStreamWriter : Stream
 {
-    private static readonly ILogger<ChunkedStreamWriter> Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<ChunkedStreamWriter>();
-
-    private readonly byte[] _buffer;
-    private readonly Stream _destination;
     private readonly byte[] _key;
+    private readonly Stream _output;
+    private readonly byte[] _buffer;
     private readonly byte[] _nonce;
     private int _bufferLength;
     private bool _disposed;
+    private bool _closed;
 
-    public ChunkedStreamWriter(byte[] key, Stream destination)
+    public ChunkedStreamWriter(byte[] key, Stream output)
     {
-        _key = key;
-        _destination = destination;
-        _buffer = new byte[ChunkedStream.EncChunkSize]; // Single buffer like age
+        _key = (byte[])key.Clone();
+        _output = output ?? throw new ArgumentNullException(nameof(output));
+        _buffer = new byte[ChunkSize];
         _nonce = new byte[12]; // All zeros initially
         _bufferLength = 0;
-        
-        Logger.LogTrace("ChunkedStreamWriter initialized with key: {KeyHex}", BitConverter.ToString(key));
+        _disposed = false;
+        _closed = false;
     }
 
     public override bool CanRead => false;
     public override bool CanSeek => false;
-    public override bool CanWrite => !_disposed;
+    public override bool CanWrite => true;
     public override long Length => throw new NotSupportedException();
-
     public override long Position
     {
         get => throw new NotSupportedException();
@@ -129,348 +124,235 @@ public class ChunkedStreamWriter : Stream
 
     public override void Write(byte[] buffer, int offset, int count)
     {
-        if (buffer == null) throw new ArgumentNullException(nameof(buffer));
-        if (offset < 0 || count < 0 || offset + count > buffer.Length)
-            throw new ArgumentOutOfRangeException();
-        if (count == 0)
-            return;
-
-        Logger.LogTrace("Writing {Count} bytes to chunked stream", count);
-
-        while (count > 0)
+        if (_disposed) throw new ObjectDisposedException(nameof(ChunkedStreamWriter));
+        if (_closed) throw new InvalidOperationException("Writer is closed");
+        int remaining = count;
+        int bufferOffset = offset;
+        while (remaining > 0)
         {
-            var available = ChunkedStream.ChunkSize - _bufferLength;
-            var toWrite = Math.Min(available, count);
-
-            Array.Copy(buffer, offset, _buffer, _bufferLength, toWrite);
+            int toWrite = Math.Min(remaining, ChunkSize - _bufferLength);
+            Buffer.BlockCopy(buffer, bufferOffset, _buffer, _bufferLength, toWrite);
             _bufferLength += toWrite;
-            offset += toWrite;
-            count -= toWrite;
-
-
-            if (_bufferLength == ChunkedStream.ChunkSize && count > 0) FlushChunk(false);
+            remaining -= toWrite;
+            bufferOffset += toWrite;
+            if (_bufferLength == ChunkSize)
+            {
+                FlushChunk(false);
+            }
         }
     }
 
     public override void Flush()
     {
-        if (_bufferLength > 0) FlushChunk(true);
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (!_disposed && disposing) Flush();
-        _disposed = true;
-        base.Dispose(disposing);
+        if (_disposed) throw new ObjectDisposedException(nameof(ChunkedStreamWriter));
+        if (_closed) return;
+        // Always flush a chunk (even if empty) to match Go implementation
+        FlushChunk(true);
+        _closed = true;
     }
 
     private void FlushChunk(bool isLast)
     {
-        if (!isLast && _bufferLength != ChunkedStream.ChunkSize)
-            throw new AgeCryptoException("stream: internal error: flush called with partial chunk");
-
-        Logger.LogTrace("Flushing chunk, isLast: {IsLast}, bufferLength: {BufferLength}", isLast, _bufferLength);
-
-        if (isLast) ChunkedStream.SetLastChunkFlag(_nonce);
-
-        var plaintext = _buffer.AsSpan(0, _bufferLength).ToArray();
-
-        var ciphertext = ChaCha20Poly1305.Encrypt(_key, _nonce, plaintext);
-
-        _destination.Write(ciphertext, 0, ciphertext.Length);
-        _bufferLength = 0;
-        ChunkedStream.IncrementNonce(_nonce);
-    }
-
-    public override int Read(byte[] buffer, int offset, int count)
-    {
-        throw new NotSupportedException();
-    }
-
-    public override long Seek(long offset, SeekOrigin origin)
-    {
-        throw new NotSupportedException();
-    }
-
-    public override void SetLength(long value)
-    {
-        throw new NotSupportedException();
-    }
-}
-
-/// <summary>
-///     Reader for chunked decryption, matching age implementation exactly.
-/// </summary>
-public class ChunkedStreamReader : Stream
-{
-    private static readonly ILogger<ChunkedStreamReader> Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<ChunkedStreamReader>();
-
-    private readonly byte[] _buffer;
-    private readonly byte[] _key;
-    private readonly byte[] _nonce;
-    private readonly Stream _source;
-    private bool _disposed;
-    private Exception? _error;
-    private byte[] _unread; // decrypted but unread data, backed by _buffer
-
-    public ChunkedStreamReader(byte[] key, Stream source)
-    {
-        _key = key;
-        _source = source;
-        _buffer = new byte[ChunkedStream.EncChunkSize]; // Single buffer like age
-        _nonce = new byte[12]; // All zeros initially
-        _unread = Array.Empty<byte>();
-        
-        
-        Logger.LogTrace("ChunkedStreamReader initialized with key: {KeyHex}", BitConverter.ToString(key));
-    }
-
-    public override bool CanRead => !_disposed;
-    public override bool CanSeek => false;
-    public override bool CanWrite => false;
-    public override long Length => throw new NotSupportedException();
-
-    public override long Position
-    {
-        get => throw new NotSupportedException();
-        set => throw new NotSupportedException();
-    }
-
-    public override int Read(byte[] buffer, int offset, int count)
-    {
-        if (buffer == null) throw new ArgumentNullException(nameof(buffer));
-        if (offset < 0 || count < 0 || offset + count > buffer.Length)
-            throw new ArgumentOutOfRangeException();
-        if (count == 0)
-            return 0;
-
-        Logger.LogTrace("Reading {Count} bytes from chunked stream", count);
-        Logger.LogTrace("Output buffer size: {BufferSize}", buffer.Length);
-
-        // If we have unread data, return it
-        if (_unread.Length > 0)
-        {
-            var toRead = Math.Min(_unread.Length, count);
-            Array.Copy(_unread, 0, buffer, offset, toRead);
-
-            // Shift remaining data to the beginning
-            if (toRead < _unread.Length)
-            {
-                var remaining = new byte[_unread.Length - toRead];
-                Array.Copy(_unread, toRead, remaining, 0, remaining.Length);
-                _unread = remaining;
-                Logger.LogTrace("Remaining unread bytes: {RemainingLength}", remaining.Length);
-            }
-            else
-            {
-                _unread = Array.Empty<byte>();
-                Logger.LogTrace("No remaining unread bytes");
-            }
-
-            return toRead;
-        }
-
-        if (_error != null)
-        {
-            // If the error is EndOfStreamException, return 0 (EOF), else throw
-            if (_error is EndOfStreamException)
-                return 0;
-            throw new IOException("Error during chunked decryption", _error);
-        }
-
-        var isLast = ReadChunk();
-        if (_error != null)
-        {
-            if (_error is EndOfStreamException)
-                return 0;
-            throw new IOException("Error during chunked decryption", _error);
-        }
-
-        var n = Math.Min(_unread.Length, count);
-        Array.Copy(_unread, 0, buffer, offset, n);
-
-
-        // Shift remaining data to the beginning
-        if (n < _unread.Length)
-        {
-            var remaining = new byte[_unread.Length - n];
-            Array.Copy(_unread, n, remaining, 0, remaining.Length);
-            _unread = remaining;
-        }
-        else
-        {
-            _unread = Array.Empty<byte>();
-            Logger.LogTrace("No remaining unread bytes after copy");
-        }
-
+        var chunkData = new byte[_bufferLength];
+        Buffer.BlockCopy(_buffer, 0, chunkData, 0, _bufferLength);
+        var nonceCopy = (byte[])_nonce.Clone();
         if (isLast)
         {
-            Logger.LogTrace("Last chunk read, checking for trailing data");
-            // Ensure there is an EOF after the last chunk as expected
-            var trailingBuffer = new byte[1];
-            var trailingRead = _source.Read(trailingBuffer, 0, 1);
-            if (trailingRead > 0)
-            {
-                Logger.LogTrace("Found trailing data after last chunk: {TrailingDataHex}", BitConverter.ToString(trailingBuffer));
-                _error = new AgeCryptoException("trailing data after end of encrypted file");
-                throw new IOException("Error during chunked decryption", _error);
-            }
-            Logger.LogTrace("No trailing data found, EOF confirmed");
+            SetLastChunkFlag(nonceCopy);
         }
-
-        return n;
-    }
-
-    private bool ReadChunk()
-    {
-        if (_unread.Length != 0)
-            throw new AgeCryptoException("stream: internal error: readChunk called with dirty buffer");
-
-
-        // Read the encrypted chunk using ReadFull (matching age's io.ReadFull)
-        var n = ReadFull(_source, _buffer, 0, _buffer.Length);
-
-        var isLast = false;
-        byte[] chunkData;
-
-        if (n == 0)
-        {
-            // A message can't end without a marked chunk. This message is truncated.
-            Logger.LogTrace("No data read, stream truncated");
-            _error = new EndOfStreamException("Unexpected end of stream");
-            return false;
-        }
-
-        if (n < _buffer.Length)
-        {
-            Logger.LogTrace("Short chunk read: {N} bytes (expected {ExpectedLength})", n, _buffer.Length);
-            // The last chunk can be short, but not empty unless it's the first and only chunk
-            if (!IsNonceZero() && n == 16) // 16 is ChaCha20-Poly1305 overhead
-            {
-                Logger.LogTrace("Last chunk is empty, this is an error");
-                _error = new AgeCryptoException(
-                    "last chunk is empty");
-                return false;
-            }
-
-            chunkData = new byte[n];
-            Array.Copy(_buffer, 0, chunkData, 0, n);
-            isLast = true;
-            
-            SetLastChunkFlag(_nonce); // Always set last chunk flag on original nonce for short chunk
-        }
-        else
-        {
-            chunkData = _buffer;
-            Logger.LogTrace("Full chunk read of {ChunkDataHex} bytes", chunkData.Length);
-        }
-
-        // Try to decrypt the chunk
-        byte[] decrypted;
-        try
-        {
-            decrypted = ChaCha20Poly1305.Decrypt(_key, _nonce, chunkData);
-            Logger.LogTrace("Successfully decrypted chunk {DecryptedHex} bytes", decrypted.Length);
-            
-            // Only increment nonce after successful decryption (matching age implementation)
-            IncNonce();
-        }
-        catch (CryptographicException ex) when (!isLast)
-        {
-            Logger.LogTrace("Decryption failed, retrying as last chunk: {Error}", ex.Message);
-            // Check if this was a full-length final chunk (age retry logic)
-            isLast = true;
-            
-            // Modify the original nonce in-place for the retry (matching Rust implementation)
-            SetLastChunkFlag(_nonce);
-
-            try
-            {
-                Logger.LogTrace("Retrying decryption with last chunk flag");
-                decrypted = ChaCha20Poly1305.Decrypt(_key, _nonce, chunkData);
-                Logger.LogTrace("Retry successful, decrypted: {DecryptedHex} bytes", decrypted.Length);
-                
-                // Only increment nonce after successful retry decryption
-                IncNonce();
-            }
-            catch (CryptographicException ex2)
-            {
-                Logger.LogTrace("Retry also failed: {Error}", ex2.Message);
-                _error = new CryptographicException(
-                    $"failed to decrypt and authenticate payload chunk (retry): {ex2.Message}");
-                return false;
-            }
-        }
-        catch (CryptographicException ex)
-        {
-            Logger.LogTrace("Decryption failed: {Error}", ex.Message);
-            _error = new CryptographicException($"failed to decrypt and authenticate payload chunk: {ex.Message}");
-            return false;
-        }
-
-        _unread = decrypted;
-
-        return isLast;
-    }
-
-    // Helper to read exactly 'count' bytes from the stream, returns number of bytes read
-    private static int ReadFull(Stream stream, byte[] buffer, int offset, int count)
-    {
-        var totalRead = 0;
-        
-        while (totalRead < count)
-        {
-            var bytesRead = stream.Read(buffer, offset + totalRead, count - totalRead);
-            if (bytesRead == 0)
-                break;
-            totalRead += bytesRead;
-        }
-
-        return totalRead;
+        var encrypted = ChaCha20Poly1305.Encrypt(_key, nonceCopy, chunkData);
+        _output.Write(encrypted, 0, encrypted.Length);
+        IncrementNonce(_nonce);
+        _bufferLength = 0;
     }
 
     protected override void Dispose(bool disposing)
     {
         if (!_disposed && disposing)
         {
+            Flush();
+            _output?.Dispose();
         }
-
         _disposed = true;
         base.Dispose(disposing);
     }
 
-    public override void Flush()
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+}
+
+public class ChunkedStreamReader : Stream
+{
+    private readonly byte[] _key;
+    private readonly Stream _input;
+    private readonly byte[] _buffer;
+    private readonly byte[] _nonce;
+    private readonly byte[] _unread;
+    private int _unreadLength;
+    private bool _disposed;
+    private bool _isLastChunk;
+    private bool _eof;
+
+    public ChunkedStreamReader(byte[] key, Stream input)
     {
+        _key = (byte[])key.Clone();
+        _input = input ?? throw new ArgumentNullException(nameof(input));
+        _buffer = new byte[ChunkSize + 16]; // Chunk + tag
+        _nonce = new byte[12]; // All zeros initially
+        _unread = new byte[ChunkSize];
+        _unreadLength = 0;
+        _disposed = false;
+        _isLastChunk = false;
+        _eof = false;
     }
 
-    public override long Seek(long offset, SeekOrigin origin)
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position
     {
-        throw new NotSupportedException();
+        get => throw new NotSupportedException();
+        set => throw new NotSupportedException();
     }
 
-    public override void SetLength(long value)
+    public override int Read(byte[] buffer, int offset, int count)
     {
-        throw new NotSupportedException();
+        if (_disposed) throw new ObjectDisposedException(nameof(ChunkedStreamReader));
+        if (_eof && _unreadLength == 0) return 0; // EOF
+        int totalRead = 0;
+        // Read from unread buffer first
+        if (_unreadLength > 0)
+        {
+            int toRead = Math.Min(count, _unreadLength);
+            Buffer.BlockCopy(_unread, 0, buffer, offset, toRead);
+            Buffer.BlockCopy(_unread, toRead, _unread, 0, _unreadLength - toRead);
+            _unreadLength -= toRead;
+            totalRead += toRead;
+            offset += toRead;
+            count -= toRead;
+        }
+        // Read more chunks if needed
+        while (count > 0 && !_eof)
+        {
+            var chunkData = ReadChunk();
+            if (chunkData == null) break; // EOF
+            int toRead = Math.Min(count, chunkData.Length);
+            Buffer.BlockCopy(chunkData, 0, buffer, offset, toRead);
+            totalRead += toRead;
+            offset += toRead;
+            count -= toRead;
+            // Store remaining data in unread buffer
+            if (toRead < chunkData.Length)
+            {
+                int remaining = chunkData.Length - toRead;
+                Buffer.BlockCopy(chunkData, toRead, _unread, 0, remaining);
+                _unreadLength = remaining;
+            }
+        }
+        return totalRead;
     }
 
-    public override void Write(byte[] buffer, int offset, int count)
+    private byte[]? ReadChunk()
     {
-        throw new NotSupportedException();
+        int encryptedSize = ChunkSize + 16; // Chunk + tag
+        int n = 0;
+        
+        // Read exactly encryptedSize bytes (like io.ReadFull in Go)
+        while (n < encryptedSize)
+        {
+            int read = _input.Read(_buffer, n, encryptedSize - n);
+            if (read == 0)
+            {
+                // End of stream reached
+                if (n == 0)
+                {
+                    // No data read at all
+                    if (_isLastChunk)
+                    {
+                        _eof = true;
+                        return null;
+                    }
+                    throw new AgeFormatException("Unexpected end of stream");
+                }
+                else
+                {
+                    // Partial read - this is a short chunk (last chunk)
+                    break;
+                }
+            }
+            n += read;
+        }
+        
+        bool isLast = false;
+        if (n < encryptedSize)
+        {
+            // Short read: last chunk
+            if (!IsNonceZero(_nonce) && n == 16)
+            {
+                throw new AgeFormatException("Last chunk is empty, try age v1.0.0, and please consider reporting this");
+            }
+            isLast = true;
+        }
+        
+        var chunkData = new byte[n];
+        Buffer.BlockCopy(_buffer, 0, chunkData, 0, n);
+        var nonceCopy = (byte[])_nonce.Clone();
+        
+        if (isLast)
+        {
+            SetLastChunkFlag(nonceCopy);
+        }
+        
+        try
+        {
+            var decrypted = ChaCha20Poly1305.Decrypt(_key, nonceCopy, chunkData);
+            IncrementNonce(_nonce);
+            if (isLast)
+            {
+                _isLastChunk = true;
+                _eof = true;
+            }
+            return decrypted;
+        }
+        catch (AgeCryptoException) when (!isLast)
+        {
+            throw;
+        }
+        catch (AgeCryptoException)
+        {
+            // Decryption failed on a short read - try with last chunk flag
+            var lastChunkNonce = (byte[])_nonce.Clone();
+            SetLastChunkFlag(lastChunkNonce);
+            try
+            {
+                var decrypted = ChaCha20Poly1305.Decrypt(_key, lastChunkNonce, chunkData);
+                IncrementNonce(_nonce);
+                _isLastChunk = true;
+                _eof = true;
+                return decrypted;
+            }
+            catch (AgeCryptoException)
+            {
+                throw new AgeCryptoException("Failed to decrypt and authenticate payload chunk");
+            }
+        }
     }
 
-    private void IncNonce()
+    protected override void Dispose(bool disposing)
     {
-        ChunkedStream.IncrementNonce(_nonce);
+        if (!_disposed && disposing)
+        {
+            _input?.Dispose();
+        }
+        _disposed = true;
+        base.Dispose(disposing);
     }
 
-    private void SetLastChunkFlag(byte[] nonce)
-    {
-        ChunkedStream.SetLastChunkFlag(nonce);
-    }
-
-    private bool IsNonceZero()
-    {
-        var isZero = ChunkedStream.IsNonceZero(_nonce);
-        return isZero;
-    }
+    public override void Flush() => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+}
 }

@@ -50,9 +50,10 @@ public class Header
             var stanzaEncoded = stanza.Encode();
             sb.Append(stanzaEncoded);
             _logger.LogTrace("Added stanza of type {StanzaType}: {StanzaEncoded}", stanza.Type, stanzaEncoded);
+            _logger.LogTrace("Stanza encoded string: {StanzaEncoded}", stanzaEncoded);
         }
 
-        // Add the MAC prefix (without the MAC value)
+        // Add the MAC prefix (without the MAC value) - no newline as per age spec
         sb.Append("---");
         _logger.LogTrace("Added MAC prefix: ---");
 
@@ -80,6 +81,7 @@ public class Header
             var stanzaEncoded = stanza.Encode();
             sb.Append(stanzaEncoded);
             _logger.LogTrace("Added stanza of type {StanzaType}: {StanzaEncoded}", stanza.Type, stanzaEncoded);
+            _logger.LogTrace("Stanza encoded string: {StanzaEncoded}", stanzaEncoded);
         }
 
         // Add the MAC line if available
@@ -90,16 +92,17 @@ public class Header
                 throw new AgeFormatException(
                     $"MAC must be 32 bytes (got {Mac.Length}) for age/rage compatibility");
             
-            _logger.LogTrace("MAC value: {MacHex}", BitConverter.ToString(Mac));
+            _logger.LogTrace("MAC value length: {MacLength} bytes", Mac.Length);
             
             // Use canonical unpadded base64
             var macBase64 = Base64Utils.EncodeToString(Mac);
             sb.Append($"--- {macBase64}\n");
-            _logger.LogTrace("Added MAC line: --- {MacBase64}", macBase64);
+            _logger.LogTrace("Added MAC line with length: {MacBase64Length} characters", macBase64.Length);
         }
         else
         {
-            sb.Append("---\n");
+            // No newline after --- as per age spec (matches Go implementation)
+            sb.Append("---");
             _logger.LogTrace("Added empty MAC line: ---");
         }
 
@@ -119,20 +122,23 @@ public class Header
             throw new AgeKeyException("File key must be 16 bytes");
 
         _logger.LogTrace("Calculating header MAC");
-        _logger.LogTrace("File key: {FileKeyHex}", BitConverter.ToString(fileKey));
+        _logger.LogTrace("File key length: {FileKeyLength} bytes", fileKey.Length);
+        _logger.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
 
         // Derive the MAC key using HKDF
         var macKey = Hkdf.DeriveKey(fileKey, new byte[0], "header", 32);
-        _logger.LogTrace("Derived MAC key: {MacKeyHex}", BitConverter.ToString(macKey));
+        _logger.LogTrace("Derived MAC key length: {MacKeyLength} bytes", macKey.Length);
+        _logger.LogTrace("MAC key: {MacKey}", BitConverter.ToString(macKey));
 
         // Calculate HMAC-SHA-256 over the header up to and including "---"
         var headerWithoutMac = EncodeWithoutMac();
         var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMac);
-        _logger.LogTrace("Header bytes for MAC calculation: {HeaderBytesHex}", BitConverter.ToString(headerBytes));
+        _logger.LogTrace("Header bytes for MAC calculation: {HeaderBytesLength} bytes", headerBytes.Length);
 
         using var hmac = new HMACSHA256(macKey);
         Mac = hmac.ComputeHash(headerBytes);
-        _logger.LogTrace("Calculated MAC: {MacHex}", BitConverter.ToString(Mac));
+        _logger.LogTrace("Calculated MAC length: {MacLength} bytes", Mac.Length);
+        _logger.LogTrace("MAC: {Mac}", BitConverter.ToString(Mac));
     }
 
     /// <summary>
@@ -146,20 +152,23 @@ public class Header
             throw new AgeKeyException("File key must be 16 bytes");
 
         _logger.LogTrace("Calculating header MAC and returning");
-        _logger.LogTrace("File key: {FileKeyHex}", BitConverter.ToString(fileKey));
+        _logger.LogTrace("File key length: {FileKeyLength} bytes", fileKey.Length);
+        _logger.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
 
         // Derive the MAC key using HKDF
         var macKey = Hkdf.DeriveKey(fileKey, new byte[0], "header", 32);
-        _logger.LogTrace("Derived MAC key: {MacKeyHex}", BitConverter.ToString(macKey));
+        _logger.LogTrace("Derived MAC key length: {MacKeyLength} bytes", macKey.Length);
+        _logger.LogTrace("MAC key: {MacKey}", BitConverter.ToString(macKey));
 
         // Calculate HMAC-SHA-256 over the header up to and including "---"
         var headerWithoutMac = EncodeWithoutMac();
         var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMac);
-        _logger.LogTrace("Header bytes for MAC calculation: {HeaderBytesHex}", BitConverter.ToString(headerBytes));
+        _logger.LogTrace("Header bytes for MAC calculation: {HeaderBytesLength} bytes", headerBytes.Length);
 
         using var hmac = new HMACSHA256(macKey);
         var mac = hmac.ComputeHash(headerBytes);
-        _logger.LogTrace("Calculated MAC: {MacHex}", BitConverter.ToString(mac));
+        _logger.LogTrace("Calculated MAC length: {MacLength} bytes", mac.Length);
+        _logger.LogTrace("MAC: {Mac}", BitConverter.ToString(mac));
         return mac;
     }
 
@@ -221,11 +230,13 @@ public class Header
                 while (i + 1 < lines.Length && !lines[i + 1].StartsWith("->") && !lines[i + 1].StartsWith("---"))
                 {
                     i++;
-                    if (!string.IsNullOrEmpty(lines[i])) bodyLines.Add(lines[i]);
+                    if (!string.IsNullOrEmpty(lines[i])) 
+                        bodyLines.Add(lines[i]);
                 }
 
                 // Use Stanza.Parse to construct the stanza
-                var stanzaParsed = Stanza.Parse(stanzaType, new[] { stanzaArgs }.Concat(bodyLines));
+                var rawTextLines = new[] { stanzaArgs }.Concat(bodyLines).ToArray();
+                var stanzaParsed = Stanza.Parse(stanzaType, rawTextLines);
                 header.Stanzas.Add(stanzaParsed);
             }
         }

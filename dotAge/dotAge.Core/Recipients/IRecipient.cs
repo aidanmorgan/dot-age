@@ -25,4 +25,9 @@ public interface IRecipient
     /// <param name="stanza">The stanza containing the wrapped file key.</param>
     /// <returns>The unwrapped file key, or null if the recipient cannot unwrap the file key.</returns>
     byte[]? UnwrapKey(Stanza stanza);
+
+    /// <summary>
+    ///     Returns true if this recipient supports the given stanza type.
+    /// </summary>
+    bool SupportsStanzaType(string stanzaType);
 }

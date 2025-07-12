@@ -1,401 +1,308 @@
-using System.Security.Cryptography;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
+using DotAge.Core.Crypto;
+using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
+using DotAge.Core.Logging;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
-using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace DotAge.Core;
 
 /// <summary>
-///     Provides high-level API for the age encryption system.
+///     Main age encryption/decryption functionality.
+///     Implements the age file format specification.
 /// </summary>
 public class Age
 {
-    private static readonly ILogger<Age> _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<Age>();
+    private static readonly ILogger _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Age));
 
-    // The list of identities (for decryption)
-    private readonly List<IRecipient> _identities = [];
-
-    // The list of recipients
-    private readonly List<IRecipient> _recipients = [];
+    private readonly List<IRecipient> _recipients = new();
+    private readonly List<IRecipient> _identities = new();
 
     /// <summary>
-    ///     Adds a recipient to the list of recipients.
+    ///     Adds a recipient for encryption.
     /// </summary>
     /// <param name="recipient">The recipient to add.</param>
-    /// <returns>This Age instance for method chaining.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when recipient is null.</exception>
-    public Age AddRecipient(IRecipient recipient)
+    public void AddRecipient(IRecipient recipient)
     {
-        ArgumentNullException.ThrowIfNull(recipient);
-        _logger.LogTrace("Adding recipient of type {RecipientType}", recipient.Type);
+        if (recipient == null) throw new ArgumentNullException(nameof(recipient));
         _recipients.Add(recipient);
-        return this;
     }
 
     /// <summary>
-    ///     Adds an identity to the list of identities.
+    ///     Adds an identity for decryption.
     /// </summary>
     /// <param name="identity">The identity to add.</param>
-    /// <returns>This Age instance for method chaining.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when identity is null.</exception>
-    public Age AddIdentity(IRecipient identity)
+    public void AddIdentity(IRecipient identity)
     {
-        ArgumentNullException.ThrowIfNull(identity);
-        _logger.LogTrace("Adding identity of type {IdentityType}", identity.Type);
+        if (identity == null) throw new ArgumentNullException(nameof(identity));
         _identities.Add(identity);
-        return this;
     }
 
     /// <summary>
-    ///     Encrypts data for the specified recipients.
+    ///     Encrypts data using the configured recipients.
     /// </summary>
     /// <param name="plaintext">The plaintext to encrypt.</param>
     /// <returns>The encrypted data.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when plaintext is null.</exception>
-    /// <exception cref="AgeEncryptionException">Thrown when no recipients are specified.</exception>
     public byte[] Encrypt(byte[] plaintext)
     {
-        ArgumentNullException.ThrowIfNull(plaintext);
-
-        _logger.LogTrace("Starting encryption with {PlaintextLength} bytes, {RecipientCount} recipients", 
-            plaintext.Length, _recipients.Count);
-
+        if (plaintext == null) throw new ArgumentNullException(nameof(plaintext));
         if (_recipients.Count == 0)
-            throw new AgeEncryptionException("No recipients specified");
+            throw new AgeEncryptionException("No recipients configured for encryption");
 
-        // Generate a random 16-byte file key (as per age specification)
+        _logger.LogTrace("=== AGE ENCRYPT START ===");
+        _logger.LogTrace("Plaintext length: {PlaintextLength} bytes", plaintext.Length);
+        _logger.LogTrace("Plaintext (first 64 bytes): {PlaintextPrefix}", BitConverter.ToString(plaintext.Take(64).ToArray()));
+
+        // Generate a random file key (16 bytes as per age spec)
         var fileKey = RandomUtils.GenerateRandomBytes(16);
+        _logger.LogTrace("Generated file key: {FileKey}", BitConverter.ToString(fileKey));
 
-        // Create a stanza for each recipient
-        var stanzas = _recipients.Select(recipient => recipient.CreateStanza(fileKey)).ToList();
+        // Create header with recipients
+        var header = new Header();
+        foreach (var recipient in _recipients)
+        {
+            var stanza = recipient.CreateStanza(fileKey);
+            header.Stanzas.Add(stanza);
+        }
 
-        // Create the header and calculate its MAC
-        var header = new Header(stanzas);
+        // Calculate header MAC
         header.CalculateMac(fileKey);
 
-        // Create the payload
+        // Create payload and encrypt data
         var payload = new Payload(fileKey);
-
-        // Combine the header and payload
         using var ms = new MemoryStream();
-        using var writer = new StreamWriter(ms, Encoding.ASCII);
-
-        // Write the header
-        var headerEncoded = header.Encode();
-        _logger.LogTrace("Header encoded length: {HeaderLength} bytes", headerEncoded.Length);
-        writer.Write(headerEncoded);
-        writer.Flush();
-
-        // Write the payload using chunked encryption
         payload.EncryptData(plaintext, ms);
+        var encryptedPayload = ms.ToArray();
 
-        var result = ms.ToArray();
+        _logger.LogTrace("Encrypted payload length: {PayloadLength} bytes", encryptedPayload.Length);
+        _logger.LogTrace("Encrypted payload (first 64 bytes): {PayloadPrefix}", BitConverter.ToString(encryptedPayload.Take(64).ToArray()));
+
+        // Combine header and payload
+        var headerEncoded = header.Encode();
+        var headerBytes = Encoding.ASCII.GetBytes(headerEncoded);
+        var result = new byte[headerBytes.Length + encryptedPayload.Length];
+        Buffer.BlockCopy(headerBytes, 0, result, 0, headerBytes.Length);
+        Buffer.BlockCopy(encryptedPayload, 0, result, headerBytes.Length, encryptedPayload.Length);
+
+        _logger.LogTrace("Final ciphertext length: {CiphertextLength} bytes", result.Length);
+        _logger.LogTrace("=== AGE ENCRYPT END ===");
         return result;
     }
 
     /// <summary>
-    ///     Decrypts data using the specified identities.
+    ///     Decrypts data using the configured identities.
     /// </summary>
-    /// <param name="ciphertext">The ciphertext to decrypt.</param>
-    /// <returns>The decrypted plaintext.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when ciphertext is null.</exception>
-    /// <exception cref="AgeDecryptionException">Thrown when no identities are specified or no identity matched any recipient.</exception>
-    /// <exception cref="AgeFormatException">Thrown when the age file is malformed.</exception>
-    /// <exception cref="AgeCryptoException">Thrown when there's a cryptographic error.</exception>
+    /// <param name="ciphertext">The encrypted data to decrypt.</param>
+    /// <returns>The decrypted data.</returns>
     public byte[] Decrypt(byte[] ciphertext)
     {
-        ArgumentNullException.ThrowIfNull(ciphertext);
-
-        _logger.LogTrace("Starting decryption with {CiphertextLength} bytes, {IdentityCount} identities", 
-            ciphertext.Length, _identities.Count);
-
+        if (ciphertext == null) throw new ArgumentNullException(nameof(ciphertext));
         if (_identities.Count == 0)
-            throw new AgeDecryptionException("No identities specified");
+            throw new AgeDecryptionException("No identities configured for decryption");
 
-        // Parse the header and get payload start position
-        var parseResult = ParseHeaderWithPosition(ciphertext);
-        if (parseResult is not { } headerInfo)
-            throw new AgeFormatException("Malformed age file: no header footer found");
+        _logger.LogTrace("=== AGE DECRYPT START ===");
+        _logger.LogTrace("Ciphertext length: {CiphertextLength} bytes", ciphertext.Length);
+        _logger.LogTrace("Ciphertext (first 64 bytes): {CiphertextPrefix}", BitConverter.ToString(ciphertext.Take(64).ToArray()));
 
-        var (header, payloadStart) = headerInfo;
-        _logger.LogTrace("Header parsed successfully. Payload starts at position {PayloadStart}, {StanzaCount} stanzas found", 
-            payloadStart, header.Stanzas.Count);
+        // Parse header
+        var header = ParseHeader(ciphertext);
+        _logger.LogTrace("Parsed header with {StanzaCount} stanzas", header.Stanzas.Count);
 
-        // Create a new stream positioned at the payload start
-        using var ms = new MemoryStream(ciphertext);
-        ms.Seek(payloadStart, SeekOrigin.Begin);
+        var headerEncoded = header.Encode();
+        var headerBytes = Encoding.ASCII.GetBytes(headerEncoded);
+        var payloadStart = headerBytes.Length;
 
-        // Try to unwrap the file key using each identity
+        // Try to unwrap the file key using any identity
         byte[]? fileKey = null;
         foreach (var identity in _identities)
         {
-            foreach (var stanza in header.Stanzas.Where(s => s.Type == identity.Type))
+            _logger.LogTrace("Trying identity: {IdentityType}", identity.GetType().Name);
+            foreach (var stanza in header.Stanzas)
             {
+                _logger.LogTrace("Processing stanza type: '{StanzaType}' with identity: {IdentityType}", stanza.Type, identity.GetType().Name);
+                
+                // Only try to unwrap stanzas that this identity supports
+                if (!identity.SupportsStanzaType(stanza.Type))
+                {
+                    _logger.LogTrace("Skipping stanza type '{StanzaType}' - not supported by identity type '{IdentityType}'", stanza.Type, identity.Type);
+                    continue;
+                }
+                
+                _logger.LogTrace("Attempting to unwrap stanza type '{StanzaType}' with identity type '{IdentityType}'", stanza.Type, identity.Type);
                 try
                 {
-                    fileKey = identity.UnwrapKey(stanza);
-                    if (fileKey is not null)
+                    var candidate = identity.UnwrapKey(stanza);
+                    if (candidate != null)
                     {
+                        fileKey = candidate;
                         break;
                     }
                 }
-                catch (CryptographicException ex)
+                catch (Exception ex)
                 {
-                    _logger.LogTrace("Failed to unwrap key with stanza {StanzaType}: {Error}", stanza.Type, ex.Message);
-                    // Continue to next stanza
+                    _logger.LogDebug(ex, "Failed to unwrap file key with identity {IdentityType} and stanza type {StanzaType}", identity.GetType().Name, stanza.Type);
                 }
             }
-
-            if (fileKey is not null)
+            if (fileKey != null)
                 break;
         }
 
-        if (fileKey is null)
-            throw new AgeDecryptionException("No identity matched any of the recipients");
+        if (fileKey == null)
+        {
+            _logger.LogTrace("Failed to unwrap file key with any identity");
+            throw new AgeDecryptionException("Failed to unwrap file key with any identity");
+        }
 
-        // Verify the header MAC
+        // Verify header MAC
         header.CalculateMac(fileKey);
 
-        if (header.Mac is null)
-            throw new AgeCryptoException("Failed to calculate header MAC");
+        // Decrypt the payload
+        var encryptedPayload = new byte[ciphertext.Length - payloadStart];
+        Buffer.BlockCopy(ciphertext, payloadStart, encryptedPayload, 0, encryptedPayload.Length);
 
-        // The stream is now positioned at the start of the payload
+        _logger.LogTrace("Encrypted payload length: {PayloadLength} bytes", encryptedPayload.Length);
+        _logger.LogTrace("Encrypted payload (first 64 bytes): {PayloadPrefix}", BitConverter.ToString(encryptedPayload.Take(64).ToArray()));
+
         var payload = new Payload(fileKey);
-        var plaintext = payload.DecryptData(ms);
+        using var ms = new MemoryStream(encryptedPayload);
+        var decryptedData = payload.DecryptData(ms);
 
-        return plaintext;
+        _logger.LogTrace("Decrypted data length: {DecryptedLength} bytes", decryptedData.Length);
+        _logger.LogTrace("Decrypted data (first 64 bytes): {DecryptedPrefix}", BitConverter.ToString(decryptedData.Take(64).ToArray()));
+        _logger.LogTrace("=== AGE DECRYPT END ===");
+        return decryptedData;
     }
 
     /// <summary>
-    ///     Encrypts a file for the specified recipients.
+    ///     Encrypts a file.
     /// </summary>
-    /// <param name="inputPath">The path to the input file.</param>
-    /// <param name="outputPath">The path to the output file.</param>
-    /// <exception cref="AgeFormatException">Thrown when input or output path is invalid or input file not found.</exception>
+    /// <param name="inputPath">The input file path.</param>
+    /// <param name="outputPath">The output file path.</param>
     public void EncryptFile(string inputPath, string outputPath)
     {
-        if (string.IsNullOrEmpty(inputPath))
-            throw new AgeFormatException("Input path cannot be null or empty");
+        if (string.IsNullOrEmpty(inputPath)) throw new ArgumentException("Input path cannot be null or empty");
+        if (string.IsNullOrEmpty(outputPath)) throw new ArgumentException("Output path cannot be null or empty");
 
-        if (string.IsNullOrEmpty(outputPath))
-            throw new AgeFormatException("Output path cannot be null or empty");
-
-        if (!File.Exists(inputPath))
-            throw new AgeFormatException("Input file not found");
-
-        _logger.LogTrace("Encrypting file: {InputPath} -> {OutputPath}", inputPath, outputPath);
-
-        // Read the input file
         var plaintext = File.ReadAllBytes(inputPath);
-        _logger.LogTrace("Read {PlaintextLength} bytes from input file", plaintext.Length);
-
-        // Encrypt the plaintext
         var ciphertext = Encrypt(plaintext);
-
-        // Write the output file
         File.WriteAllBytes(outputPath, ciphertext);
-        _logger.LogTrace("Wrote {CiphertextLength} bytes to output file", ciphertext.Length);
     }
 
     /// <summary>
-    ///     Encrypts a file for the specified recipients asynchronously.
+    ///     Encrypts a file asynchronously.
     /// </summary>
-    /// <param name="inputPath">The path to the input file.</param>
-    /// <param name="outputPath">The path to the output file.</param>
-    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <exception cref="AgeFormatException">Thrown when input or output path is invalid or input file not found.</exception>
-    public async Task EncryptFileAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
+    /// <param name="inputPath">The input file path.</param>
+    /// <param name="outputPath">The output file path.</param>
+    public async Task EncryptFileAsync(string inputPath, string outputPath)
     {
-        if (string.IsNullOrEmpty(inputPath))
-            throw new AgeFormatException("Input path cannot be null or empty");
+        if (string.IsNullOrEmpty(inputPath)) throw new ArgumentException("Input path cannot be null or empty");
+        if (string.IsNullOrEmpty(outputPath)) throw new ArgumentException("Output path cannot be null or empty");
 
-        if (string.IsNullOrEmpty(outputPath))
-            throw new AgeFormatException("Output path cannot be null or empty");
-
-        if (!File.Exists(inputPath))
-            throw new AgeFormatException("Input file not found");
-
-        _logger.LogTrace("Encrypting file asynchronously: {InputPath} -> {OutputPath}", inputPath, outputPath);
-
-        // Read the input file
-        var plaintext = await File.ReadAllBytesAsync(inputPath, cancellationToken);
-        _logger.LogTrace("Read {PlaintextLength} bytes from input file", plaintext.Length);
-
-        // Encrypt the plaintext
+        var plaintext = await File.ReadAllBytesAsync(inputPath);
         var ciphertext = Encrypt(plaintext);
-
-        // Write the output file
-        await File.WriteAllBytesAsync(outputPath, ciphertext, cancellationToken);
-        _logger.LogTrace("Wrote {CiphertextLength} bytes to output file", ciphertext.Length);
+        await File.WriteAllBytesAsync(outputPath, ciphertext);
     }
 
     /// <summary>
-    ///     Decrypts a file using the specified identities.
+    ///     Decrypts a file.
     /// </summary>
-    /// <param name="inputPath">The path to the input file.</param>
-    /// <param name="outputPath">The path to the output file.</param>
-    /// <exception cref="AgeFormatException">Thrown when input or output path is invalid or input file not found.</exception>
+    /// <param name="inputPath">The input file path.</param>
+    /// <param name="outputPath">The output file path.</param>
     public void DecryptFile(string inputPath, string outputPath)
     {
-        if (string.IsNullOrEmpty(inputPath))
-            throw new AgeFormatException("Input path cannot be null or empty");
+        if (string.IsNullOrEmpty(inputPath)) throw new ArgumentException("Input path cannot be null or empty");
+        if (string.IsNullOrEmpty(outputPath)) throw new ArgumentException("Output path cannot be null or empty");
 
-        if (string.IsNullOrEmpty(outputPath))
-            throw new AgeFormatException("Output path cannot be null or empty");
-
-        if (!File.Exists(inputPath))
-            throw new AgeFormatException("Input file not found");
-
-        _logger.LogTrace("Decrypting file: {InputPath} -> {OutputPath}", inputPath, outputPath);
-
-        // Read the input file
         var ciphertext = File.ReadAllBytes(inputPath);
-        _logger.LogTrace("Read {CiphertextLength} bytes from input file", ciphertext.Length);
-
-        // Decrypt the ciphertext
         var plaintext = Decrypt(ciphertext);
-
-        // Write the output file
         File.WriteAllBytes(outputPath, plaintext);
-        _logger.LogTrace("Wrote {PlaintextLength} bytes to output file", plaintext.Length);
     }
 
     /// <summary>
-    ///     Decrypts a file using the specified identities asynchronously.
+    ///     Decrypts a file asynchronously.
     /// </summary>
-    /// <param name="inputPath">The path to the input file.</param>
-    /// <param name="outputPath">The path to the output file.</param>
-    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <exception cref="AgeFormatException">Thrown when input or output path is invalid or input file not found.</exception>
-    public async Task DecryptFileAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
+    /// <param name="inputPath">The input file path.</param>
+    /// <param name="outputPath">The output file path.</param>
+    public async Task DecryptFileAsync(string inputPath, string outputPath)
     {
-        if (string.IsNullOrEmpty(inputPath))
-            throw new AgeFormatException("Input path cannot be null or empty");
+        if (string.IsNullOrEmpty(inputPath)) throw new ArgumentException("Input path cannot be null or empty");
+        if (string.IsNullOrEmpty(outputPath)) throw new ArgumentException("Output path cannot be null or empty");
 
-        if (string.IsNullOrEmpty(outputPath))
-            throw new AgeFormatException("Output path cannot be null or empty");
-
-        if (!File.Exists(inputPath))
-            throw new AgeFormatException("Input file not found");
-
-        _logger.LogTrace("Decrypting file asynchronously: {InputPath} -> {OutputPath}", inputPath, outputPath);
-
-        // Read the input file
-        var ciphertext = await File.ReadAllBytesAsync(inputPath, cancellationToken);
-        _logger.LogTrace("Read {CiphertextLength} bytes from input file", ciphertext.Length);
-
-        // Decrypt the ciphertext
+        var ciphertext = await File.ReadAllBytesAsync(inputPath);
         var plaintext = Decrypt(ciphertext);
-
-        // Write the output file
-        await File.WriteAllBytesAsync(outputPath, plaintext, cancellationToken);
-        _logger.LogTrace("Wrote {PlaintextLength} bytes to output file", plaintext.Length);
+        await File.WriteAllBytesAsync(outputPath, plaintext);
     }
 
     /// <summary>
-    ///     Parses the header from ciphertext and returns the header object and payload start position.
+    ///     Parses an age header from ciphertext.
     /// </summary>
-    /// <param name="ciphertext">The ciphertext to parse.</param>
-    /// <returns>A tuple containing the parsed header and payload start position, or null if parsing fails.</returns>
-    private static (Header header, long payloadStart)? ParseHeaderWithPosition(byte[] ciphertext)
+    /// <param name="ciphertext">The ciphertext containing the header.</param>
+    /// <returns>The parsed header.</returns>
+    public static Header ParseHeader(byte[] ciphertext)
     {
-        _logger.LogTrace("Parsing header from {CiphertextLength} bytes of ciphertext", ciphertext.Length);
+        if (ciphertext == null) throw new ArgumentNullException(nameof(ciphertext));
 
-        try
+        _logger.LogTrace("=== AGE PARSE HEADER START ===");
+        _logger.LogTrace("Ciphertext length: {CiphertextLength} bytes", ciphertext.Length);
+
+        // Find the header by reading lines until we find the MAC line
+        var ms = new MemoryStream(ciphertext);
+        var reader = new StreamReader(ms, Encoding.UTF8, false, 1024, true);
+
+        var headerLines = new List<string>();
+        string? line;
+        var payloadStart = -1L;
+
+        while ((line = reader.ReadLine()) != null)
         {
-            // Robust header/footer parsing using byte-based line reading
-            using var ms = new MemoryStream(ciphertext);
-            var headerBytes = new List<byte>();
-            var lineBuffer = new List<byte>();
-            var foundFooter = false;
-
-            int b;
-            while ((b = ms.ReadByte()) != -1)
+            headerLines.Add(line);
+            _logger.LogTrace("Read header line: '{Line}'", line);
+            
+            if (line.StartsWith("---"))
             {
-                lineBuffer.Add((byte)b);
-                if (b == '\n')
-                {
-                    // Check if this line is the footer
-                    if (lineBuffer.Count >= 3 && 
-                        lineBuffer[0] == (byte)'-' && 
-                        lineBuffer[1] == (byte)'-' &&
-                        lineBuffer[2] == (byte)'-')
-                    {
-                        foundFooter = true;
-                        headerBytes.AddRange(lineBuffer);
-                        _logger.LogTrace("Found footer at position {Position}", ms.Position);
-                        break;
-                    }
-
-                    headerBytes.AddRange(lineBuffer);
-                    lineBuffer.Clear();
-                }
-            }
-
-            if (!foundFooter)
-            {
-                _logger.LogTrace("No footer found, malformed age file");
-                return null; // Malformed age file
-            }
-
-            // Skip any blank lines after the footer
-            var payloadStart = ms.Position;
-            while (true)
-            {
-                var skipByte = ms.ReadByte();
-                if (skipByte == -1)
-                    break;
-
-                if (skipByte != '\n' && skipByte != '\r' && skipByte != ' ' && skipByte != '\t')
-                {
-                    ms.Seek(-1, SeekOrigin.Current);
-                    break;
-                }
-
                 payloadStart = ms.Position;
+                _logger.LogTrace("Found MAC line, payload starts at position: {PayloadStart}", payloadStart);
+                break;
             }
-
-            _logger.LogTrace("Payload starts at position {PayloadStart}", payloadStart);
-
-            var headerText = Encoding.ASCII.GetString(headerBytes.ToArray());
-            
-            var header = Header.Decode(headerText);
-            _logger.LogTrace("Header parsed successfully with {StanzaCount} stanzas", header.Stanzas.Count);
-            
-            return (header, payloadStart);
         }
-        catch (Exception ex)
-        {
-            _logger.LogTrace("Failed to parse header: {Error}", ex.Message);
-            return null; // If we can't parse the header, return null
-        }
+
+        if (payloadStart == -1)
+            throw new AgeFormatException("No MAC line found in age file");
+
+        // Reconstruct the header string and parse it properly
+        var headerString = string.Join("\n", headerLines);
+        _logger.LogTrace("Reconstructed header string: {HeaderString}", headerString);
+
+        // Use Header.Decode to properly parse the header including stanza bodies
+        var header = Header.Decode(headerString);
+        _logger.LogTrace("Successfully parsed header with {StanzaCount} stanzas", header.Stanzas.Count);
+
+        _logger.LogTrace("=== AGE PARSE HEADER END ===");
+        return header;
     }
 
     /// <summary>
-    ///     Parses the header from ciphertext and returns the header object.
-    /// </summary>
-    /// <param name="ciphertext">The ciphertext to parse.</param>
-    /// <returns>The parsed header, or null if parsing fails.</returns>
-    private static Header? ParseHeader(byte[] ciphertext) => 
-        ParseHeaderWithPosition(ciphertext)?.header;
-
-    /// <summary>
-    ///     Detects if the given ciphertext is passphrase-encrypted by checking for scrypt stanzas.
+    ///     Checks if the ciphertext is passphrase-encrypted.
     /// </summary>
     /// <param name="ciphertext">The ciphertext to check.</param>
-    /// <returns>True if the file is passphrase-encrypted, false otherwise.</returns>
+    /// <returns>True if the ciphertext is passphrase-encrypted.</returns>
     public static bool IsPassphraseEncrypted(byte[] ciphertext)
     {
-        ArgumentNullException.ThrowIfNull(ciphertext);
-
-        _logger.LogTrace("Checking if ciphertext is passphrase-encrypted");
-        var header = ParseHeader(ciphertext);
-        var isPassphraseEncrypted = header?.Stanzas.Any(stanza => stanza.Type == "scrypt") ?? false;
-        _logger.LogTrace("Is passphrase-encrypted: {IsPassphraseEncrypted}", isPassphraseEncrypted);
-        return isPassphraseEncrypted;
+        try
+        {
+            var header = ParseHeader(ciphertext);
+            return header.Stanzas.Any(s => s.Type == "scrypt");
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

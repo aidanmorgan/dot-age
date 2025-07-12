@@ -1,232 +1,275 @@
-using System.Security.Cryptography;
+using System;
+using System.Text;
 using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
-using DotAge.Core.Utils;
 using DotAge.Core.Logging;
+using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
 
 namespace DotAge.Core.Recipients;
 
 /// <summary>
-///     X25519 recipient implementation for age encryption.
+///     X25519 recipient for age encryption.
+///     Implements the age X25519 recipient specification.
 /// </summary>
 public class X25519Recipient : IRecipient
 {
     private static readonly ILogger<X25519Recipient> Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<X25519Recipient>();
 
-    private const string HkdfInfoString = "age-encryption.org/v1/X25519";
+    public string Type => "X25519";
 
-    private readonly byte[] _publicKey;
     private readonly byte[]? _privateKey;
+    private readonly byte[] _publicKey;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="X25519Recipient"/> class with a public key.
-    /// This constructor creates a recipient that can only be used for encryption.
+    ///     Creates a new X25519Recipient from a public key.
     /// </summary>
-    /// <param name="publicKey">The X25519 public key.</param>
-    /// <exception cref="ArgumentNullException">Thrown when publicKey is null.</exception>
-    /// <exception cref="AgeKeyException">Thrown when publicKey has an invalid length.</exception>
+    /// <param name="publicKey">The public key.</param>
     public X25519Recipient(byte[] publicKey)
     {
-        ArgumentNullException.ThrowIfNull(publicKey);
-
-        if (publicKey.Length != X25519.KeySize) 
+        if (publicKey == null || publicKey.Length != X25519.KeySize)
             throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
 
         _publicKey = publicKey;
         _privateKey = null;
-        
-        Logger.LogTrace("Created X25519Recipient with public key: {PublicKeyHex}", BitConverter.ToString(publicKey));
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="X25519Recipient"/> class with a public and private key pair.
-    /// This constructor creates a recipient that can be used for both encryption and decryption.
+    ///     Creates a new X25519Recipient from a private key.
     /// </summary>
-    /// <param name="publicKey">The X25519 public key.</param>
-    /// <param name="privateKey">The X25519 private key.</param>
-    /// <exception cref="ArgumentNullException">Thrown when publicKey or privateKey is null.</exception>
-    /// <exception cref="AgeKeyException">Thrown when publicKey or privateKey has an invalid length.</exception>
-    public X25519Recipient(byte[] publicKey, byte[] privateKey)
+    /// <param name="privateKey">The private key.</param>
+    public X25519Recipient(byte[] privateKey, byte[] publicKey)
     {
-        ArgumentNullException.ThrowIfNull(publicKey);
-        ArgumentNullException.ThrowIfNull(privateKey);
-
-        if (publicKey.Length != X25519.KeySize) 
-            throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
-
-        if (privateKey.Length != X25519.KeySize) 
+        if (privateKey == null || privateKey.Length != X25519.KeySize)
             throw new AgeKeyException($"Private key must be {X25519.KeySize} bytes");
 
-        _publicKey = publicKey;
+        if (publicKey == null || publicKey.Length != X25519.KeySize)
+            throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
+
         _privateKey = privateKey;
-        
-        Logger.LogTrace("Created X25519Recipient with public key: {PublicKeyHex} and private key: {PrivateKeyHex}", 
-            BitConverter.ToString(publicKey), BitConverter.ToString(privateKey));
+        _publicKey = publicKey;
     }
 
     /// <summary>
-    /// Gets the recipient type.
+    ///     Creates a stanza for encrypting a file key.
     /// </summary>
-    public string Type => "X25519";
-
-    /// <summary>
-    /// Creates a stanza for this recipient containing the wrapped file key.
-    /// </summary>
-    /// <param name="fileKey">The file key to wrap.</param>
-    /// <returns>A stanza containing the wrapped file key.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when fileKey is null.</exception>
-    /// <exception cref="ArgumentException">Thrown when fileKey has an invalid length.</exception>
+    /// <param name="fileKey">The file key to encrypt.</param>
+    /// <returns>The stanza containing the encrypted file key.</returns>
     public Stanza CreateStanza(byte[] fileKey)
     {
-        ValidationUtils.ValidateFileKey(fileKey);
+        if (fileKey == null || fileKey.Length != 16)
+            throw new AgeCryptoException("File key must be 16 bytes");
 
-        Logger.LogTrace("Creating X25519 stanza for file key: {FileKeyHex}", BitConverter.ToString(fileKey));
-
-        // Generate an ephemeral key pair
+        // Generate ephemeral key pair
         var (ephemeralPrivateKey, ephemeralPublicKey) = X25519.GenerateKeyPair();
-        Logger.LogTrace("Generated ephemeral key pair - Private: {EphemeralPrivateKeyHex}, Public: {EphemeralPublicKeyHex}", 
-            BitConverter.ToString(ephemeralPrivateKey), BitConverter.ToString(ephemeralPublicKey));
+        Logger.LogTrace("Ephemeral private key: {EphemeralPrivateKey}", BitConverter.ToString(ephemeralPrivateKey));
+        Logger.LogTrace("Ephemeral public key: {EphemeralPublicKey}", BitConverter.ToString(ephemeralPublicKey));
+        Logger.LogTrace("Recipient public key: {RecipientPublicKey}", BitConverter.ToString(_publicKey));
 
-        // Perform key agreement between the ephemeral private key and the recipient's public key
+        // Perform key agreement
         var sharedSecret = X25519.KeyAgreement(ephemeralPrivateKey, _publicKey);
-        Logger.LogTrace("Generated shared secret: {SharedSecretHex}", BitConverter.ToString(sharedSecret));
+        Logger.LogTrace("Shared secret: {SharedSecret}", BitConverter.ToString(sharedSecret));
 
-        // Derive the wrapping key using HKDF with salt = ephemeralPublicKey || recipientPublicKey
-        var salt = CombineKeys(ephemeralPublicKey, _publicKey);
-        Logger.LogTrace("Combined salt: {SaltHex}", BitConverter.ToString(salt));
+        // Create salt by combining ephemeral public key and recipient public key
+        var salt = new byte[ephemeralPublicKey.Length + _publicKey.Length];
+        Buffer.BlockCopy(ephemeralPublicKey, 0, salt, 0, ephemeralPublicKey.Length);
+        Buffer.BlockCopy(_publicKey, 0, salt, ephemeralPublicKey.Length, _publicKey.Length);
+        Logger.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
 
-        var wrappingKey = Hkdf.DeriveKey(
-            sharedSecret, 
-            salt, 
-            HkdfInfoString, 
-            DotAge.Core.Crypto.ChaCha20Poly1305.KeySize);
-        Logger.LogTrace("Derived wrapping key: {WrappingKeyHex}", BitConverter.ToString(wrappingKey));
+        // Derive wrapping key
+        var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, "age-encryption.org/v1/X25519", 32);
+        Logger.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
 
-        // Encrypt the file key with the wrapping key
-        var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-        Logger.LogTrace("Using zero nonce: {NonceHex}", BitConverter.ToString(nonce));
+        // Encrypt file key
+        var nonce = new byte[12]; // All zeros
+        Logger.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
+        Logger.LogTrace("File key (plaintext): {FileKey}", BitConverter.ToString(fileKey));
+        var wrappedKey = ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
+        Logger.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(wrappedKey));
 
-        var wrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
-        Logger.LogTrace("Wrapped file key: {WrappedKeyHex}", BitConverter.ToString(wrappedKey));
-
-        // Create the stanza
-        var stanza = new Stanza(Type);
-        stanza.Arguments.Add(Base64Utils.EncodeToString(ephemeralPublicKey));
-        stanza.Body = wrappedKey;
+        // Create stanza
+        var arguments = new List<string> { Base64Utils.EncodeToString(ephemeralPublicKey) };
+        var stanza = new Stanza("X25519", arguments, wrappedKey);
 
         return stanza;
     }
 
-    /// <summary>
-    /// Unwraps a file key from a stanza.
-    /// </summary>
-    /// <param name="stanza">The stanza containing the wrapped file key.</param>
-    /// <returns>The unwrapped file key, or null if this recipient cannot unwrap the key.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when stanza is null.</exception>
-    /// <exception cref="ArgumentException">Thrown when stanza has an invalid format.</exception>
-    public byte[]? UnwrapKey(Stanza stanza)
+    public bool SupportsStanzaType(string stanzaType)
     {
-        ValidationUtils.ValidateStanza(stanza, Type, 1);
-
-        if (_privateKey is null) 
-        {
-            Logger.LogTrace("Cannot unwrap key - no private key available");
-            return null; // Cannot unwrap without a private key
-        }
-
-        Logger.LogTrace("Unwrapping key from stanza with {ArgumentCount} arguments and {BodyLength} bytes body", 
-            stanza.Arguments.Count, stanza.Body.Length);
-
-        // Extract the ephemeral public key and wrapped key
-        var ephemeralPublicKey = Base64Utils.DecodeString(stanza.Arguments[0]);
-        var wrappedKey = stanza.Body;
-
-        Logger.LogTrace("Extracted ephemeral public key: {EphemeralPublicKeyHex}", BitConverter.ToString(ephemeralPublicKey));
-        Logger.LogTrace("Extracted wrapped key: {WrappedKeyHex}", BitConverter.ToString(wrappedKey));
-
-        // Perform key agreement between the recipient's private key and the ephemeral public key
-        var sharedSecret = X25519.KeyAgreement(_privateKey, ephemeralPublicKey);
-        Logger.LogTrace("Generated shared secret: {SharedSecretHex}", BitConverter.ToString(sharedSecret));
-
-        // Derive the wrapping key using HKDF with salt = ephemeralPublicKey || recipientPublicKey
-        var salt = CombineKeys(ephemeralPublicKey, _publicKey);
-        Logger.LogTrace("Combined salt: {SaltHex}", BitConverter.ToString(salt));
-
-        var wrappingKey = Hkdf.DeriveKey(
-            sharedSecret, 
-            salt, 
-            HkdfInfoString, 
-            DotAge.Core.Crypto.ChaCha20Poly1305.KeySize);
-        Logger.LogTrace("Derived wrapping key: {WrappingKeyHex}", BitConverter.ToString(wrappingKey));
-
-        // Decrypt the wrapped key
-        var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
-        Logger.LogTrace("Using zero nonce: {NonceHex}", BitConverter.ToString(nonce));
-
-        var unwrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
-        Logger.LogTrace("Unwrapped file key: {UnwrappedKeyHex}", BitConverter.ToString(unwrappedKey));
-
-        return unwrappedKey;
+        return string.Equals(stanzaType, "X25519", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
-    /// Creates a recipient from a public key.
+    ///     Unwraps a file key from a stanza.
     /// </summary>
-    /// <param name="publicKey">The X25519 public key.</param>
-    /// <returns>A new X25519Recipient that can only be used for encryption.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when publicKey is null.</exception>
-    /// <exception cref="AgeKeyException">Thrown when publicKey has an invalid length.</exception>
-    public static X25519Recipient FromPublicKey(byte[] publicKey)
+    /// <param name="stanza">The stanza containing the encrypted file key.</param>
+    /// <returns>The decrypted file key, or null if unwrapping fails.</returns>
+    public byte[]? UnwrapKey(Stanza stanza)
     {
-        ArgumentNullException.ThrowIfNull(publicKey);
+        // Direct console output for debugging
+        Console.WriteLine($"[DEBUG] X25519Recipient.UnwrapKey called with stanza type: '{stanza.Type}'");
+        
+        if (_privateKey == null)
+        {
+            Console.WriteLine("[DEBUG] No private key available");
+            return null;
+        }
 
-        if (publicKey.Length != X25519.KeySize) 
+        if (!SupportsStanzaType(stanza.Type))
+        {
+            Console.WriteLine($"[DEBUG] Stanza type '{stanza.Type}' does not match 'X25519', returning null");
+            return null;
+        }
+
+        if (stanza.Arguments.Count != 1)
+        {
+            Console.WriteLine($"[DEBUG] Stanza has {stanza.Arguments.Count} arguments, expected 1, returning null");
+            return null;
+        }
+
+        Console.WriteLine("[DEBUG] Stanza type matches, proceeding with decryption");
+        Logger.LogTrace("UnwrapKey called with stanza type: '{StanzaType}', arguments: [{Arguments}]", stanza.Type, string.Join(", ", stanza.Arguments));
+
+        try
+        {
+            // Decode ephemeral public key - standard age format uses base64 encoding
+            byte[] ephemeralPublicKey;
+            var keyArg = stanza.Arguments[0];
+            Logger.LogTrace("Ephemeral public key (base64 string): '{KeyArg}' (length: {Length})", keyArg, keyArg.Length);
+            try
+            {
+                ephemeralPublicKey = Base64Utils.DecodeString(keyArg);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Base64 decode failed for ephemeral public key: '{KeyArg}'", keyArg);
+                // If base64 fails, try standard base64
+                try
+                {
+                    ephemeralPublicKey = Convert.FromBase64String(keyArg);
+                }
+                catch (Exception ex2)
+                {
+                    Logger.LogError(ex2, "Standard base64 decode also failed for ephemeral public key: '{KeyArg}'", keyArg);
+                    return null;
+                }
+            }
+            Logger.LogTrace("Ephemeral public key (decoded bytes): {EphemeralPublicKey} (length: {Length})", BitConverter.ToString(ephemeralPublicKey), ephemeralPublicKey.Length);
+            Logger.LogTrace("Own private key: {OwnPrivateKey}", BitConverter.ToString(_privateKey));
+            Logger.LogTrace("Own public key: {OwnPublicKey}", BitConverter.ToString(_publicKey));
+
+            if (ephemeralPublicKey.Length != X25519.KeySize)
+            {
+                Logger.LogError("Ephemeral public key decoded to {Length} bytes, expected {ExpectedLength}. Bytes: {Bytes}", ephemeralPublicKey.Length, X25519.KeySize, BitConverter.ToString(ephemeralPublicKey));
+                return null;
+            }
+
+            // Perform key agreement
+            var sharedSecret = X25519.KeyAgreement(_privateKey, ephemeralPublicKey);
+            Logger.LogTrace("Shared secret: {SharedSecret}", BitConverter.ToString(sharedSecret));
+
+            // Create salt
+            var salt = new byte[ephemeralPublicKey.Length + _publicKey.Length];
+            Buffer.BlockCopy(ephemeralPublicKey, 0, salt, 0, ephemeralPublicKey.Length);
+            Buffer.BlockCopy(_publicKey, 0, salt, ephemeralPublicKey.Length, _publicKey.Length);
+            Logger.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
+
+            // Derive wrapping key
+            var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, "age-encryption.org/v1/X25519", 32);
+            Logger.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
+
+            // Decrypt file key
+            var nonce = new byte[12]; // All zeros
+            Logger.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
+            Logger.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(stanza.Body));
+            var unwrappedKey = ChaCha20Poly1305.Decrypt(wrappingKey, nonce, stanza.Body);
+            Logger.LogTrace("Unwrapped file key (plaintext): {UnwrappedKey}", BitConverter.ToString(unwrappedKey));
+
+            if (unwrappedKey.Length != 16)
+                return null;
+
+            return unwrappedKey;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Failed to unwrap X25519 key");
+            return null;
+        }
+    }
+
+    /// <summary>
+    ///     Creates an X25519Recipient from a public key string.
+    /// </summary>
+    /// <param name="publicKeyString">The public key string.</param>
+    /// <returns>The X25519Recipient.</returns>
+    public static X25519Recipient FromPublicKey(string publicKeyString)
+    {
+        if (string.IsNullOrEmpty(publicKeyString))
+            throw new AgeKeyException("Public key string cannot be null or empty");
+
+        if (!publicKeyString.StartsWith(X25519.PublicKeyPrefix))
+            throw new AgeKeyException($"Public key must start with {X25519.PublicKeyPrefix}");
+
+        var (_, publicKey) = Bech32.Decode(publicKeyString);
+        if (publicKey.Length != X25519.KeySize)
             throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
 
-        Logger.LogTrace("Creating X25519Recipient from public key: {PublicKeyHex}", BitConverter.ToString(publicKey));
         return new X25519Recipient(publicKey);
     }
 
     /// <summary>
-    /// Creates a recipient from a private key.
+    ///     Creates an X25519Recipient from a private key string.
     /// </summary>
-    /// <param name="privateKey">The X25519 private key.</param>
-    /// <returns>A new X25519Recipient that can be used for both encryption and decryption.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when privateKey is null.</exception>
-    /// <exception cref="AgeKeyException">Thrown when privateKey has an invalid length.</exception>
-    public static X25519Recipient FromPrivateKey(byte[] privateKey)
+    /// <param name="privateKeyString">The private key string.</param>
+    /// <returns>The X25519Recipient.</returns>
+    public static X25519Recipient FromPrivateKey(string privateKeyString)
     {
-        ArgumentNullException.ThrowIfNull(privateKey);
+        if (string.IsNullOrEmpty(privateKeyString))
+            throw new AgeKeyException("Private key string cannot be null or empty");
 
-        if (privateKey.Length != X25519.KeySize) 
-            throw new AgeKeyException($"Private key must be {X25519.KeySize} bytes");
+        if (!privateKeyString.StartsWith(X25519.PrivateKeyPrefix))
+            throw new AgeKeyException($"Private key must start with {X25519.PrivateKeyPrefix}");
 
-        Logger.LogTrace("Creating X25519Recipient from private key: {PrivateKeyHex}", BitConverter.ToString(privateKey));
-
+        var privateKey = KeyFileUtils.DecodeAgeSecretKey(privateKeyString);
         var publicKey = X25519.GetPublicKeyFromPrivateKey(privateKey);
-        Logger.LogTrace("Derived public key: {PublicKeyHex}", BitConverter.ToString(publicKey));
 
-        return new X25519Recipient(publicKey, privateKey);
+        return new X25519Recipient(privateKey, publicKey);
     }
 
     /// <summary>
-    /// Combines two keys into a single byte array.
+    ///     Combines two X25519Recipient instances.
     /// </summary>
-    /// <param name="key1">The first key.</param>
-    /// <param name="key2">The second key.</param>
-    /// <returns>A byte array containing both keys concatenated.</returns>
-    private static byte[] CombineKeys(byte[] key1, byte[] key2)
+    /// <param name="other">The other X25519Recipient.</param>
+    /// <returns>A new X25519Recipient with combined keys.</returns>
+    public X25519Recipient Combine(X25519Recipient other)
     {
-        Logger.LogTrace("Combining keys - Key1: {Key1Hex}, Key2: {Key2Hex}", 
-            BitConverter.ToString(key1), BitConverter.ToString(key2));
+        if (other == null)
+            throw new ArgumentNullException(nameof(other));
 
-        var combined = new byte[key1.Length + key2.Length];
-        Buffer.BlockCopy(key1, 0, combined, 0, key1.Length);
-        Buffer.BlockCopy(key2, 0, combined, key1.Length, key2.Length);
+        var combinedPrivateKey = _privateKey != null && other._privateKey != null
+            ? XorKeys(_privateKey, other._privateKey)
+            : null;
 
-        Logger.LogTrace("Combined result: {CombinedHex}", BitConverter.ToString(combined));
+        var combinedPublicKey = XorKeys(_publicKey, other._publicKey);
+
+        return combinedPrivateKey != null 
+            ? new X25519Recipient(combinedPrivateKey, combinedPublicKey)
+            : new X25519Recipient(combinedPublicKey);
+    }
+
+    private static byte[] XorKeys(byte[] key1, byte[] key2)
+    {
+        if (key1.Length != key2.Length)
+            throw new AgeKeyException("Keys must have the same length");
+
+        var combined = new byte[key1.Length];
+        for (int i = 0; i < key1.Length; i++)
+        {
+            combined[i] = (byte)(key1[i] ^ key2[i]);
+        }
+
         return combined;
     }
 }

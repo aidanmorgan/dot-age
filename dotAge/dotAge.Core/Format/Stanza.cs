@@ -51,11 +51,22 @@ public class Stanza
         if (string.IsNullOrEmpty(type))
             throw new AgeFormatException("Stanza type cannot be null or empty");
 
+        _logger.LogTrace("=== STANZA PARSE START ===");
+        _logger.LogTrace("Stanza type: '{Type}'", type);
 
         if (rawTextLines == null)
+        {
+            _logger.LogTrace("Raw text lines is null, returning empty stanza");
             return new Stanza(type);
+        }
 
         var linesList = rawTextLines.ToList();
+        _logger.LogTrace("Raw text lines count: {LineCount}", linesList.Count);
+        for (int idx = 0; idx < linesList.Count; idx++)
+        {
+            _logger.LogTrace("Raw line {Index}: '{Line}'", idx, linesList[idx]);
+        }
+
         var arguments = new List<string>();
         var bodyLines = new List<string>();
 
@@ -63,10 +74,12 @@ public class Stanza
         if (linesList.Count > 0)
         {
             var firstLine = linesList[0];
+            _logger.LogTrace("First line: '{FirstLine}'", firstLine);
 
             // Check if the first line is the type (which would be the case if this is a stanza header line)
             if (firstLine.StartsWith(type))
             {
+                _logger.LogTrace("First line starts with type '{Type}'", type);
                 // Extract arguments from the first line after the type
                 var argsString = firstLine.Substring(type.Length).Trim();
                 var args = argsString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -75,6 +88,7 @@ public class Stanza
             }
             else
             {
+                _logger.LogTrace("First line does not start with type '{Type}'", type);
                 // If the first line doesn't start with the type, it contains the arguments
                 var args = firstLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 arguments.AddRange(args);
@@ -82,13 +96,27 @@ public class Stanza
             }
 
             // The rest of the lines are the body
-            if (linesList.Count > 1) bodyLines.AddRange(linesList.Skip(1));
+            if (linesList.Count > 1) 
+            {
+                bodyLines.AddRange(linesList.Skip(1));
+                _logger.LogTrace("Body lines count: {BodyLineCount}", bodyLines.Count);
+                for (int idx = 0; idx < bodyLines.Count; idx++)
+                {
+                    _logger.LogTrace("Body line {Index}: '{Line}'", idx, bodyLines[idx]);
+                }
+            }
+            else
+            {
+                _logger.LogTrace("No body lines (only first line present)");
+            }
         }
 
         // Decode the base64 body lines
+        _logger.LogTrace("Calling DecodeBase64Lines with {BodyLineCount} lines", bodyLines.Count);
         var bodyBytes = DecodeBase64Lines(bodyLines);
-        _logger.LogTrace("Decoded body bytes: {BodyBytesHex}", BitConverter.ToString(bodyBytes));
+        _logger.LogTrace("Decoded body bytes: {BodyBytesLength} bytes", bodyBytes.Length);
 
+        _logger.LogTrace("=== STANZA PARSE END ===");
         return new Stanza(type, arguments, bodyBytes);
     }
 
@@ -119,10 +147,11 @@ public class Stanza
         if (Body.Length > 0)
         {
             var base64 = Base64Utils.EncodeToString(Body);
-            _logger.LogTrace("Body base64: {BodyBase64}", base64);
+            _logger.LogTrace("Body base64 length: {BodyBase64Length} characters", base64.Length);
 
-            var wrapped = Base64Utils.WrapBase64(base64);
-            sb.Append(wrapped);
+            // Wrap base64 at 64 columns as required by age specification
+            var wrappedBase64 = Base64Utils.WrapBase64(base64, 64);
+            sb.Append(wrappedBase64);
             // Add final newline after the body
             sb.Append("\n");
         }

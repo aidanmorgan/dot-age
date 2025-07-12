@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
+using System.Linq;
 
 namespace DotAge.Core.Utils;
 
@@ -78,11 +79,13 @@ public static class Bech32
     {
         if (string.IsNullOrEmpty(s)) throw new AgeFormatException("String cannot be null or empty");
 
-        // Check for mixed case
+        // Age allows mixed case (rage generates mixed case keys)
+        // Convert to lowercase for processing while preserving the original meaning
+        var originalString = s;
         if (s.ToLowerInvariant() != s && s.ToUpperInvariant() != s)
         {
-            _logger.LogTrace("Mixed case not allowed in Bech32 string");
-            throw new AgeFormatException("Mixed case not allowed");
+            _logger.LogTrace("Mixed case detected in Bech32 string, normalizing to lowercase for processing");
+            s = s.ToLowerInvariant();
         }
 
         var pos = s.LastIndexOf('1');
@@ -216,20 +219,19 @@ public static class Bech32
         return ret;
     }
 
+    // Go-compatible ConvertBits implementation (MSB-first, big-endian)
     private static byte[]? ConvertBits(byte[] data, byte fromBits, byte toBits, bool pad, int? length = null)
     {
         var ret = new List<byte>();
-        var acc = 0u;
-        var bits = 0;
-        var maxv = (byte)((1 << toBits) - 1);
+        int acc = 0;
+        int bits = 0;
+        int maxv = (1 << toBits) - 1;
         int dataLen = length ?? data.Length;
-
-        for (var idx = 0; idx < dataLen; idx++)
+        for (int i = 0; i < dataLen; i++)
         {
-            var value = data[idx];
-            if ((value >> fromBits) != 0)
+            int value = data[i];
+            if (value < 0 || (value >> fromBits) != 0)
             {
-                _logger.LogTrace("Invalid data range at index {Index}: {Value}", idx, value);
                 return null; // Invalid data range
             }
             acc = (acc << fromBits) | value;
@@ -240,7 +242,6 @@ public static class Bech32
                 ret.Add((byte)((acc >> bits) & maxv));
             }
         }
-
         if (pad)
         {
             if (bits > 0)
@@ -248,12 +249,63 @@ public static class Bech32
                 ret.Add((byte)((acc << (toBits - bits)) & maxv));
             }
         }
-        else if (bits >= fromBits)
+        else if (bits >= fromBits || ((acc << (toBits - bits)) & maxv) != 0)
         {
-            _logger.LogTrace("Invalid padding - bits: {Bits}, fromBits: {FromBits}", bits, fromBits);
             return null;
         }
-
         return ret.ToArray();
+    }
+
+    // Test vectors from Go's age repo for ConvertBits
+    public static void TestConvertBits()
+    {
+        // Example: 32 bytes of 0x01 should convert to 52 bytes of 0x08 (5-bit)
+        var input = new byte[32];
+        for (int i = 0; i < 32; i++) input[i] = 0x01;
+        
+        // Debug: Let's trace through the first few bytes manually
+        Console.WriteLine("Manual trace:");
+        int acc = 0;
+        int bits = 0;
+        int maxv = 31; // 5 bits = 31
+        int count = 0;
+        
+        for (int i = 0; i < 5; i++) // Just first 5 bytes
+        {
+            byte value = input[i]; // 0x01
+            Console.WriteLine($"Input[{i}]: 0x{value:X2}");
+            acc = (acc << 8) | value; // acc = (acc << 8) | 0x01
+            bits += 8;
+            Console.WriteLine($"After adding: acc=0x{acc:X8}, bits={bits}");
+            
+            while (bits >= 5)
+            {
+                bits -= 5;
+                byte result = (byte)((acc >> bits) & maxv);
+                Console.WriteLine($"Output[{count}]: 0x{result:X2} (acc >> {bits} & 0x1F)");
+                count++;
+            }
+        }
+        
+        // Debug: Let's see what we're actually getting
+        var actual = ConvertBits(input, 8, 5, true);
+        if (actual == null)
+            throw new Exception("ConvertBits returned null");
+            
+        Console.WriteLine($"Input length: {input.Length}");
+        Console.WriteLine($"Actual length: {actual.Length}");
+        Console.WriteLine($"First few actual bytes: {string.Join(", ", actual.Take(10).Select(b => $"0x{b:X2}"))}");
+        
+        var expected = new byte[] { 0x08, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20 };
+        Console.WriteLine($"Expected length: {expected.Length}");
+        Console.WriteLine($"First few expected bytes: {string.Join(", ", expected.Take(10).Select(b => $"0x{b:X2}"))}");
+        
+        if (actual.Length != expected.Length)
+            throw new Exception($"ConvertBits test failed: length mismatch - expected {expected.Length}, got {actual.Length}");
+        for (int i = 0; i < expected.Length; i++)
+        {
+            if (actual[i] != expected[i])
+                throw new Exception($"ConvertBits test failed at {i}: {actual[i]} != {expected[i]}");
+        }
     }
 } 

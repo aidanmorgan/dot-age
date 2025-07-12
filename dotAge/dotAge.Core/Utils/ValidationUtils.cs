@@ -23,7 +23,6 @@ public static class ValidationUtils
         ArgumentNullException.ThrowIfNull(fileKey);
 
         Logger.LogTrace("Validating file key of length {FileKeyLength}", fileKey.Length);
-        Logger.LogTrace("File key: {FileKeyHex}", BitConverter.ToString(fileKey));
 
         if (fileKey.Length == 16) return;
         

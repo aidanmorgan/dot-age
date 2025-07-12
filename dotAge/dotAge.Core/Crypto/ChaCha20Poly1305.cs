@@ -1,108 +1,141 @@
+using System;
+using System.Buffers;
 using System.Security.Cryptography;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
+using NSec.Cryptography;
 
 namespace DotAge.Core.Crypto;
 
 /// <summary>
-///     Provides ChaCha20-Poly1305 encryption and decryption functionality.
+///     ChaCha20-Poly1305 implementation for age encryption.
+///     Implements RFC 8439 specification, matching the Go implementation.
 /// </summary>
 public static class ChaCha20Poly1305
 {
-    private static readonly ILogger _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ChaCha20Poly1305));
+    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ChaCha20Poly1305));
+    private static readonly AeadAlgorithm Algorithm = AeadAlgorithm.ChaCha20Poly1305;
 
-    // ChaCha20-Poly1305 key size in bytes
     public const int KeySize = 32;
-
-    // ChaCha20-Poly1305 nonce size in bytes
     public const int NonceSize = 12;
-
-    // ChaCha20-Poly1305 tag size in bytes
     public const int TagSize = 16;
+    public const int BlockSize = 64;
 
     /// <summary>
     ///     Encrypts data using ChaCha20-Poly1305.
+    ///     This matches the Go implementation's aeadEncrypt function.
     /// </summary>
-    /// <param name="key">The key as a byte array.</param>
-    /// <param name="nonce">The nonce as a byte array.</param>
+    /// <param name="key">The encryption key (32 bytes).</param>
+    /// <param name="nonce">The nonce (12 bytes).</param>
     /// <param name="plaintext">The plaintext to encrypt.</param>
-    /// <param name="associatedData">Optional associated data for the AEAD construction.</param>
-    /// <returns>The ciphertext as a byte array, including the authentication tag.</returns>
-    public static byte[] Encrypt(byte[] key, byte[] nonce, byte[] plaintext, byte[]? associatedData = null)
+    /// <returns>The ciphertext (plaintext + 16-byte tag).</returns>
+    public static byte[] Encrypt(byte[] key, byte[] nonce, byte[] plaintext)
     {
-        if (key == null || key.Length != KeySize)
-            throw new AgeCryptoException($"Key must be {KeySize} bytes");
+        if (key.Length != KeySize)
+            throw new AgeCryptoException($"Key must be {KeySize} bytes, got {key.Length}");
+        if (nonce.Length != NonceSize)
+            throw new AgeCryptoException($"Nonce must be {NonceSize} bytes, got {nonce.Length}");
 
-        if (nonce == null || nonce.Length != NonceSize)
-            throw new AgeCryptoException($"Nonce must be {NonceSize} bytes");
-
-        if (plaintext == null)
-            throw new ArgumentNullException(nameof(plaintext));
-
-        _logger.LogTrace("Starting ChaCha20-Poly1305 encryption");
-        _logger.LogTrace("Key: {KeyHex}", BitConverter.ToString(key));
-        _logger.LogTrace("Nonce: {NonceHex}", BitConverter.ToString(nonce));
-        _logger.LogTrace("Plaintext length: {PlaintextLength} bytes", plaintext.Length);
-        if (associatedData != null)
+        try
         {
-            _logger.LogTrace("Associated data: {AssociatedDataHex}", BitConverter.ToString(associatedData));
+            using var nsecKey = Key.Import(Algorithm, key, KeyBlobFormat.RawSymmetricKey);
+            var ciphertext = new byte[plaintext.Length + TagSize];
+            Algorithm.Encrypt(nsecKey, nonce, ReadOnlySpan<byte>.Empty, plaintext, ciphertext);
+            return ciphertext;
         }
-
-        using var aead = new System.Security.Cryptography.ChaCha20Poly1305(key);
-        var ciphertext = new byte[plaintext.Length];
-        var tag = new byte[TagSize];
-
-        aead.Encrypt(nonce, plaintext, ciphertext, tag, associatedData);
-
-        // Combine ciphertext and tag
-        var result = new byte[ciphertext.Length + tag.Length];
-        Buffer.BlockCopy(ciphertext, 0, result, 0, ciphertext.Length);
-        Buffer.BlockCopy(tag, 0, result, ciphertext.Length, tag.Length);
-
-        return result;
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "ChaCha20Poly1305 encryption failed");
+            throw new AgeCryptoException("Encryption failed", ex);
+        }
     }
 
     /// <summary>
     ///     Decrypts data using ChaCha20-Poly1305.
+    ///     This matches the Go implementation's aeadDecrypt function.
     /// </summary>
-    /// <param name="key">The key as a byte array.</param>
-    /// <param name="nonce">The nonce as a byte array.</param>
-    /// <param name="ciphertext">The ciphertext to decrypt, including the authentication tag.</param>
-    /// <param name="associatedData">Optional associated data for the AEAD construction.</param>
-    /// <returns>The plaintext as a byte array.</returns>
-    public static byte[] Decrypt(byte[] key, byte[] nonce, byte[] ciphertext, byte[]? associatedData = null)
+    /// <param name="key">The decryption key (32 bytes).</param>
+    /// <param name="nonce">The nonce (12 bytes).</param>
+    /// <param name="ciphertext">The ciphertext to decrypt (including tag).</param>
+    /// <returns>The plaintext.</returns>
+    public static byte[] Decrypt(byte[] key, byte[] nonce, byte[] ciphertext)
     {
-        if (key == null || key.Length != KeySize)
-            throw new AgeCryptoException($"Key must be {KeySize} bytes");
+        if (key.Length != KeySize)
+            throw new AgeCryptoException($"Key must be {KeySize} bytes, got {key.Length}");
+        if (nonce.Length != NonceSize)
+            throw new AgeCryptoException($"Nonce must be {NonceSize} bytes, got {nonce.Length}");
+        if (ciphertext.Length < TagSize)
+            throw new AgeCryptoException($"Ciphertext must be at least {TagSize} bytes, got {ciphertext.Length}");
 
-        if (nonce == null || nonce.Length != NonceSize)
-            throw new AgeCryptoException($"Nonce must be {NonceSize} bytes");
-
-        if (ciphertext == null || ciphertext.Length < TagSize)
-            throw new AgeCryptoException("Ciphertext must include the authentication tag");
-
-        _logger.LogTrace("Starting ChaCha20-Poly1305 decryption");
-        _logger.LogTrace("Key: {KeyHex}", BitConverter.ToString(key));
-        _logger.LogTrace("Nonce: {NonceHex}", BitConverter.ToString(nonce));
-        _logger.LogTrace("Ciphertext length: {CiphertextLength} bytes", ciphertext.Length);
-        if (associatedData != null)
+        try
         {
-            _logger.LogTrace("Associated data: {AssociatedDataHex}", BitConverter.ToString(associatedData));
+            using var nsecKey = Key.Import(Algorithm, key, KeyBlobFormat.RawSymmetricKey);
+            var plaintext = new byte[ciphertext.Length - TagSize];
+            var success = Algorithm.Decrypt(nsecKey, nonce, ReadOnlySpan<byte>.Empty, ciphertext, plaintext);
+            if (!success)
+            {
+                throw new AgeCryptoException("Authentication tag verification failed");
+            }
+            return plaintext;
         }
-
-        // Extract ciphertext and tag
-        var actualCiphertext = new byte[ciphertext.Length - TagSize];
-        var tag = new byte[TagSize];
-        Buffer.BlockCopy(ciphertext, 0, actualCiphertext, 0, actualCiphertext.Length);
-        Buffer.BlockCopy(ciphertext, actualCiphertext.Length, tag, 0, TagSize);
-
-        var plaintext = new byte[actualCiphertext.Length];
-
-        using var aead = new System.Security.Cryptography.ChaCha20Poly1305(key);
-        aead.Decrypt(nonce, actualCiphertext, tag, plaintext, associatedData);
-
-        return plaintext;
+        catch (CryptographicException ex)
+        {
+            Logger.LogError(ex, "ChaCha20Poly1305 decryption failed");
+            throw new AgeCryptoException("Authentication tag verification failed", ex);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "ChaCha20Poly1305 decryption failed");
+            throw new AgeCryptoException("Decryption failed", ex);
+        }
     }
 
+    /// <summary>
+    ///     Decrypts data using ChaCha20-Poly1305 with explicit size validation.
+    ///     This method follows the age specification by validating the expected plaintext size
+    ///     before attempting decryption, similar to the golang and rust implementations.
+    /// </summary>
+    /// <param name="key">The decryption key (32 bytes).</param>
+    /// <param name="nonce">The nonce (12 bytes).</param>
+    /// <param name="ciphertext">The ciphertext to decrypt (including tag).</param>
+    /// <param name="expectedPlaintextSize">The expected size of the plaintext in bytes.</param>
+    /// <returns>The plaintext.</returns>
+    /// <exception cref="AgeCryptoException">Thrown when the ciphertext size doesn't match the expected size.</exception>
+    public static byte[] DecryptWithSizeValidation(byte[] key, byte[] nonce, byte[] ciphertext, int expectedPlaintextSize)
+    {
+        if (key.Length != KeySize)
+            throw new AgeCryptoException($"Key must be {KeySize} bytes, got {key.Length}");
+        if (nonce.Length != NonceSize)
+            throw new AgeCryptoException($"Nonce must be {NonceSize} bytes, got {nonce.Length}");
+
+        // Validate that the ciphertext size matches the expected plaintext size + tag size
+        var expectedCiphertextSize = expectedPlaintextSize + TagSize;
+        if (ciphertext.Length != expectedCiphertextSize)
+        {
+            throw new AgeCryptoException($"Ciphertext size mismatch: expected {expectedCiphertextSize} bytes, got {ciphertext.Length} bytes");
+        }
+
+        try
+        {
+            using var nsecKey = Key.Import(Algorithm, key, KeyBlobFormat.RawSymmetricKey);
+            var plaintext = new byte[expectedPlaintextSize];
+            var success = Algorithm.Decrypt(nsecKey, nonce, ReadOnlySpan<byte>.Empty, ciphertext, plaintext);
+            if (!success)
+            {
+                throw new AgeCryptoException("Authentication tag verification failed");
+            }
+            return plaintext;
+        }
+        catch (CryptographicException ex)
+        {
+            Logger.LogError(ex, "ChaCha20Poly1305 decryption with size validation failed");
+            throw new AgeCryptoException("Authentication tag verification failed", ex);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "ChaCha20Poly1305 decryption with size validation failed");
+            throw new AgeCryptoException("Decryption failed", ex);
+        }
+    }
 }

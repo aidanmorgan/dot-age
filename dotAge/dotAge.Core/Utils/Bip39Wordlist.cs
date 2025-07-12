@@ -16,6 +16,8 @@ public static class Bip39Wordlist
     /// </summary>
     public static int Length => Words.Length;
 
+    private static readonly Random _random = new Random();
+
     /// <summary>
     /// Gets a word from the BIP39 wordlist at the specified index.
     /// </summary>
@@ -26,13 +28,16 @@ public static class Bip39Wordlist
     {
         if (index < 0 || index >= Words.Length)
         {
-            _logger.LogTrace("Invalid wordlist index: {Index} (valid range: 0-{MaxIndex})", index, Words.Length - 1);
             throw new ArgumentOutOfRangeException(nameof(index), "Index is out of range");
         }
 
         var word = Words[index];
-        _logger.LogTrace("Retrieved word at index {Index}: {Word}", index, word);
         return word;
+    }
+
+    public static string GetRandomWord(Random? rng)
+    {
+        return GetWord((rng ??_random).Next(Words.Length));
     }
 
     /// <summary>

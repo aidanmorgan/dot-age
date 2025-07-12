@@ -197,7 +197,7 @@ public static class KeyFileUtils
             throw new AgeKeyException("Invalid age public key length");
         }
 
-        Logger.LogTrace("Successfully decoded age public key: {PublicKeyHex}", BitConverter.ToString(data));
+        Logger.LogTrace("Successfully decoded age public key length: {PublicKeyLength} bytes", data.Length);
         return data;
     }
 

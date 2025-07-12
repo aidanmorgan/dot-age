@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using DotAge.Core;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
@@ -15,37 +17,51 @@ namespace DotAge.Tests;
 /// </summary>
 public class StressInteroperabilityTests : IDisposable
 {
+    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(30);
     private static readonly DotAge.Cli.Program _cli = new DotAge.Cli.Program();
     private static readonly DotAge.KeyGen.Program _keyGen = new DotAge.KeyGen.Program();
 
     private const int DefaultStressTestCount = 10000;
 
+    private static readonly IList<int> PlaintextDataSizes = new List<int>()
+    {
+        0,      // Empty file
+        1,      // Single byte
+        16,     // AES block
+        32,     // Two AES blocks
+        64,     // ChaCha20 block
+        128,    // Small text
+        256,    // Short document
+        512,    // Medium text
+        1024,   // 1KB
+        4096,   // 4KB
+        8192,   // 8KB
+        16384,  // 16KB
+        65536,  // 64KB
+        262144, // 256KB
+        1048576 // 1MB
+    };
+    
     private readonly ILogger _logger;
     private readonly string _tempDir;
     private readonly Random _random;
-    private int _testCount = 0;
-    private int _successCount = 0;
-    private int _failureCount = 0;
 
     public StressInteroperabilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("stress-interop-tests");
-        _random = new Random(42); // Fixed seed for reproducibility
+        _random = new Random(Environment.TickCount + Thread.CurrentThread.ManagedThreadId);
 
-        var loggerFactory = LoggerFactory.Create(builder =>
-            builder.AddConsole().SetMinimumLevel(LogLevel.Information));
-        _logger = loggerFactory.CreateLogger<StressInteroperabilityTests>();
+        _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
     }
 
     public void Dispose()
     {
-        TestUtils.SafeDeleteDirectory(_tempDir);
     }
 
     [Fact(DisplayName = "Stress Test: Randomized interoperability tests")]
     public async Task StressTest_RandomizedInteroperabilityTests()
     {
-        // Only run stress tests when explicitly requested
+        using var cts = new CancellationTokenSource(TestTimeout);
         var runStressTests = Environment.GetEnvironmentVariable("RUN_STRESS_TESTS");
         if (string.IsNullOrEmpty(runStressTests) || runStressTests.ToLower() != "true")
         {
@@ -55,74 +71,51 @@ public class StressInteroperabilityTests : IDisposable
 
         _logger.LogInformation("Starting stress test with 5000 randomized interoperability tests");
         
-        var startTime = DateTime.UtcNow;
-        var testTypes = new[]
-        {
-            "Key-based encryption/decryption",
-            "Passphrase-based encryption/decryption",
-            "Mixed recipients (keys + passphrases)",
-            "Large data encryption/decryption",
-            "Empty data encryption/decryption",
-            "Unicode data encryption/decryption"
-        };
-
         for (int i = 0; i < DefaultStressTestCount; i++)
         {
-            try
-            {
-                var testData = GenerateRandomTestData(i);
-                var passphrase = GenerateRandomPassphrase(i);
+            var dataSize = PlaintextDataSizes[_random.Next(PlaintextDataSizes.Count)];
+            dataSize += _random.Next(-16, 16);
 
-                await RunRandomizedTest(i, testData, passphrase);
-                
-                _successCount++;
-            }
-            catch (Exception ex)
+            if (dataSize < 0)
             {
-                var elapsed = DateTime.UtcNow - startTime;
-                var successRate = (_successCount * 100.0) / (i + 1);
-                _logger.LogError("Test {TestNumber} failed after {Elapsed:F1}s. Success rate: {SuccessRate:F1}% ({SuccessCount}/{TotalCount})", 
-                    i, elapsed.TotalSeconds, successRate, _successCount, i + 1);
-                _logger.LogError("Exception: {Exception}", ex);
-                
-                // Fail immediately on first exception
-                throw;
+                dataSize = _random.Next(1, 1048576);
             }
+            
+            var testData = GenerateRandomTestData(dataSize);
+            var passphrase = GenerateRandomPassphrase(i);
+
+            await RunRandomizedTest(i, testData, passphrase);
         }
-
-        var totalElapsed = DateTime.UtcNow - startTime;
-        var finalSuccessRate = (_successCount * 100.0) / 5000;
-        
-        _logger.LogInformation("Stress test completed in {TotalElapsed:F1}s", totalElapsed.TotalSeconds);
-        _logger.LogInformation("Final results: {SuccessCount} successful, {FailedCount} failed out of 5000 tests", 
-            _successCount, 5000 - _successCount);
-        _logger.LogInformation("Final success rate: {SuccessRate:F1}%", finalSuccessRate);
-        
-        // Assert that success rate is above 90%
-        Assert.True(finalSuccessRate >= 100.0, $"Success rate {finalSuccessRate:F1}% is below 90% threshold");
     }
     
 
     private async Task RunRandomizedTest(int testNumber, byte[] testData, string passphrase)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogTrace("=== TEST {TestNumber} START ===", testNumber);
+        logger.LogTrace("Test data length: {DataLength} bytes", testData.Length);
+        logger.LogTrace("Test data (first 32 bytes): {DataPrefix}", BitConverter.ToString(testData.Take(32).ToArray()));
+        logger.LogTrace("Passphrase length: {PassphraseLength} characters", passphrase.Length);
+        logger.LogTrace("Passphrase (first 8 chars): {PassphrasePrefix}", passphrase.Substring(0, Math.Min(8, passphrase.Length)));
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testDir = Path.Combine(_tempDir, $"test_{testNumber}");
         Directory.CreateDirectory(testDir);
         
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
-        await File.WriteAllBytesAsync(plaintextFile, testData);
+        await File.WriteAllBytesAsync(plaintextFile, testData, cts.Token);
+        logger.LogTrace("Wrote plaintext file: {Path}, length: {Length}, first 32 bytes: {Prefix}", plaintextFile, testData.Length, BitConverter.ToString(testData.Take(32).ToArray()));
 
-        // Define test methods and names as tuples for random selection
         var testMethods = new (string Name, Func<Task> Method)[]
         {
-            // Key-based tests
             ("Key-based: DotAge -> Age -> Rage", async () => {
                 var ageKeyFile = Path.Combine(testDir, $"age_key_{testNumber}.txt");
                 var rageKeyFile = Path.Combine(testDir, $"rage_key_{testNumber}.txt");
                 var dotageKeyFile = Path.Combine(testDir, $"dotage_key_{testNumber}.txt");
                 
-                await GenerateAgeKey(ageKeyFile, passphrase);
-                await GenerateRageKey(rageKeyFile, passphrase);
-                await GenerateDotAgeKey(dotageKeyFile, passphrase);
+                await GenerateAgeKey(ageKeyFile);
+                await GenerateRageKey(rageKeyFile);
+                await GenerateDotAgeKey(dotageKeyFile);
                 
                 await TestKeyBasedDotAgeToAgeToRage(testDir, testData, ageKeyFile, rageKeyFile, dotageKeyFile);
             }),
@@ -131,9 +124,9 @@ public class StressInteroperabilityTests : IDisposable
                 var rageKeyFile = Path.Combine(testDir, $"rage_key_{testNumber}.txt");
                 var dotageKeyFile = Path.Combine(testDir, $"dotage_key_{testNumber}.txt");
                 
-                await GenerateAgeKey(ageKeyFile, passphrase);
-                await GenerateRageKey(rageKeyFile, passphrase);
-                await GenerateDotAgeKey(dotageKeyFile, passphrase);
+                await GenerateAgeKey(ageKeyFile);
+                await GenerateRageKey(rageKeyFile);
+                await GenerateDotAgeKey(dotageKeyFile);
                 
                 await TestKeyBasedAgeToDotAgeToRage(testDir, testData, ageKeyFile, rageKeyFile, dotageKeyFile);
             }),
@@ -142,9 +135,9 @@ public class StressInteroperabilityTests : IDisposable
                 var rageKeyFile = Path.Combine(testDir, $"rage_key_{testNumber}.txt");
                 var dotageKeyFile = Path.Combine(testDir, $"dotage_key_{testNumber}.txt");
                 
-                await GenerateAgeKey(ageKeyFile, passphrase);
-                await GenerateRageKey(rageKeyFile, passphrase);
-                await GenerateDotAgeKey(dotageKeyFile, passphrase);
+                await GenerateAgeKey(ageKeyFile);
+                await GenerateRageKey(rageKeyFile);
+                await GenerateDotAgeKey(dotageKeyFile);
                 
                 await TestKeyBasedRageToDotAgeToAge(testDir, testData, ageKeyFile, rageKeyFile, dotageKeyFile);
             }),
@@ -153,9 +146,9 @@ public class StressInteroperabilityTests : IDisposable
                 var rageKeyFile = Path.Combine(testDir, $"rage_key_{testNumber}.txt");
                 var dotageKeyFile = Path.Combine(testDir, $"dotage_key_{testNumber}.txt");
                 
-                await GenerateAgeKey(ageKeyFile, passphrase);
-                await GenerateRageKey(rageKeyFile, passphrase);
-                await GenerateDotAgeKey(dotageKeyFile, passphrase);
+                await GenerateAgeKey(ageKeyFile);
+                await GenerateRageKey(rageKeyFile);
+                await GenerateDotAgeKey(dotageKeyFile);
                 
                 await TestKeyBasedDotAgeToRageToAge(testDir, testData, ageKeyFile, rageKeyFile, dotageKeyFile);
             }),
@@ -164,9 +157,9 @@ public class StressInteroperabilityTests : IDisposable
                 var rageKeyFile = Path.Combine(testDir, $"rage_key_{testNumber}.txt");
                 var dotageKeyFile = Path.Combine(testDir, $"dotage_key_{testNumber}.txt");
                 
-                await GenerateAgeKey(ageKeyFile, passphrase);
-                await GenerateRageKey(rageKeyFile, passphrase);
-                await GenerateDotAgeKey(dotageKeyFile, passphrase);
+                await GenerateAgeKey(ageKeyFile);
+                await GenerateRageKey(rageKeyFile);
+                await GenerateDotAgeKey(dotageKeyFile);
                 
                 await TestKeyBasedAgeToRageToDotAge(testDir, testData, ageKeyFile, rageKeyFile, dotageKeyFile);
             }),
@@ -175,13 +168,12 @@ public class StressInteroperabilityTests : IDisposable
                 var rageKeyFile = Path.Combine(testDir, $"rage_key_{testNumber}.txt");
                 var dotageKeyFile = Path.Combine(testDir, $"dotage_key_{testNumber}.txt");
                 
-                await GenerateAgeKey(ageKeyFile, passphrase);
-                await GenerateRageKey(rageKeyFile, passphrase);
-                await GenerateDotAgeKey(dotageKeyFile, passphrase);
+                await GenerateAgeKey(ageKeyFile);
+                await GenerateRageKey(rageKeyFile);
+                await GenerateDotAgeKey(dotageKeyFile);
                 
                 await TestKeyBasedRageToAgeToDotAge(testDir, testData, ageKeyFile, rageKeyFile, dotageKeyFile);
             }),
-            // Passphrase-based tests
             ("Passphrase-based: DotAge -> Age -> Rage", async () => await TestPassphraseBasedDotAgeToAgeToRage(testDir, testData, passphrase)),
             ("Passphrase-based: Age -> DotAge -> Rage", async () => await TestPassphraseBasedAgeToDotAgeToRage(testDir, testData, passphrase)),
             ("Passphrase-based: Rage -> DotAge -> Age", async () => await TestPassphraseBasedRageToDotAgeToAge(testDir, testData, passphrase)),
@@ -190,458 +182,516 @@ public class StressInteroperabilityTests : IDisposable
             ("Passphrase-based: Rage -> Age -> DotAge", async () => await TestPassphraseBasedRageToAgeToDotAge(testDir, testData, passphrase))
         };
 
-        // Randomly select a test method
-        var random = new Random(testNumber);
-        var selectedTest = testMethods[random.Next(testMethods.Length)];
+        var selectedTest = testMethods[_random.Next(testMethods.Length)];
         
-        _logger.LogInformation("Test {TestNumber}: Running permutation: {Permutation}", testNumber, selectedTest.Name);
+        logger.LogInformation("Test {TestNumber}: Running permutation: {Permutation}", testNumber, selectedTest.Name);
         
-        // Execute the randomly selected test
-        await selectedTest.Method();
+        try
+        {
+            await selectedTest.Method();
+            TestUtils.SafeDeleteDirectory(testDir);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Test permutation {Permutation} failed. Test directory preserved for analysis: {TestDir}", selectedTest.Name, testDir);
+            
+            Assert.Fail();
+            throw;
+        }
+        finally
+        {
+            logger.LogTrace("=== TEST {TestNumber} END ===", testNumber);
+        }
     }
 
-    private async Task GenerateAgeKey(string keyFile, string passphrase)
+    private async Task GenerateAgeKey(string keyFile)
     {
-        // age-keygen doesn't prompt for passphrase when using -o flag
         await TestUtils.RunCommandAsync("age-keygen", $"-o {keyFile}");
+        _logger.LogTrace("Generated age key file {KeyFile} contents:\n{Contents}", keyFile, File.ReadAllText(keyFile));
     }
 
-    private async Task GenerateRageKey(string keyFile, string passphrase)
+    private async Task GenerateRageKey(string keyFile)
     {
-        // rage-keygen doesn't prompt for passphrase when using -o flag
         await TestUtils.RunCommandAsync("rage-keygen", $"-o {keyFile}");
+        _logger.LogTrace("Generated rage key file {KeyFile} contents:\n{Contents}", keyFile, File.ReadAllText(keyFile));
     }
 
-    private async Task GenerateDotAgeKey(string keyFile, string passphrase)
+    private async Task GenerateDotAgeKey(string keyFile)
     {
-        // Use the static method from DotAge.KeyGen.Program
         var keyContent = _keyGen.GenerateKeyPairContent();
         await File.WriteAllTextAsync(keyFile, keyContent);
+        _logger.LogTrace("Generated dotage key file {KeyFile} contents:\n{Contents}", keyFile, keyContent);
     }
 
-    // Key-based tests
     private async Task TestKeyBasedDotAgeToAgeToRage(string testDir, byte[] testData, string ageKeyFile, string rageKeyFile, string dotageKeyFile)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Key-based: DotAge -> Age -> Rage ===");
+        logger.LogTrace("=== {MethodName} START ===", nameof(TestKeyBasedDotAgeToAgeToRage));
+        logger.LogTrace("Parameters: testDir={TestDir}, testDataLength={TestDataLength}, ageKeyFile={AgeKeyFile}, rageKeyFile={RageKeyFile}, dotageKeyFile={DotAgeKeyFile}", testDir, testData.Length, ageKeyFile, rageKeyFile, dotageKeyFile);
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // Extract public keys
         var (_, agePublicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
         var (_, ragePublicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var (_, dotagePublicKeyLine) = KeyFileUtils.ParseKeyFile(dotageKeyFile);
 
-        // 1. Encrypt with dotage using age public key
         var dotageEncrypted = Path.Combine(testDir, $"dotage_encrypted_{testNumber}.age");
-        var age = new Age();
+        var age = await Task.Run(() => new Age(), cts.Token);
         var agePublicKey = KeyFileUtils.DecodeAgePublicKey(agePublicKeyLine);
-        age.AddRecipient(new X25519Recipient(agePublicKey));
-        var dotageCiphertext = age.Encrypt(testData);
-        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext);
+        await Task.Run(() => age.AddRecipient(new X25519Recipient(agePublicKey)), cts.Token);
+        var dotageCiphertext = await Task.Run(() => age.Encrypt(testData), cts.Token);
+        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext, cts.Token);
+        logger.LogTrace("Wrote dotage encrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageEncrypted, dotageCiphertext.Length, BitConverter.ToString(dotageCiphertext.Take(32).ToArray()));
 
-        // 2. Decrypt with age using age private key
         var ageDecrypted = Path.Combine(testDir, $"age_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandAsync("age", $"-d -i {ageKeyFile} -o {ageDecrypted} {dotageEncrypted}");
-        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted);
+        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted, cts.Token);
+        logger.LogTrace("Read age decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", ageDecrypted, ageDecryptedData.Length, BitConverter.ToString(ageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, ageDecryptedData);
 
-        // 3. Re-encrypt with age using rage public key
         var ageReEncrypted = Path.Combine(testDir, $"age_re_encrypted_{testNumber}.age");
         await TestUtils.RunCommandAsync("age", $"-e -r {ragePublicKeyLine} -o {ageReEncrypted} {ageDecrypted}");
 
-        // 4. Decrypt with rage using rage private key
         var rageDecrypted = Path.Combine(testDir, $"rage_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandAsync("rage", $"-d -i {rageKeyFile} -o {rageDecrypted} {ageReEncrypted}");
-        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted);
+        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted, cts.Token);
+        logger.LogTrace("Read rage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", rageDecrypted, rageDecryptedData.Length, BitConverter.ToString(rageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, rageDecryptedData);
+        logger.LogTrace("=== {MethodName} END ===", nameof(TestKeyBasedDotAgeToAgeToRage));
     }
 
     private async Task TestKeyBasedAgeToDotAgeToRage(string testDir, byte[] testData, string ageKeyFile, string rageKeyFile, string dotageKeyFile)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Key-based: Age -> DotAge -> Rage ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // Extract public keys
         var (_, agePublicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
         var (_, ragePublicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var (_, dotagePublicKeyLine) = KeyFileUtils.ParseKeyFile(dotageKeyFile);
 
-        // 1. Encrypt with age using rage public key
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
         var ageEncrypted = Path.Combine(testDir, $"age_encrypted_{testNumber}.age");
         await TestUtils.RunCommandAsync("age", $"-e -r {ragePublicKeyLine} -o {ageEncrypted} {plaintextFile}");
 
-        // 2. Decrypt with dotage using rage private key
         var dotageDecrypted = Path.Combine(testDir, $"dotage_decrypted_{testNumber}.txt");
         var (ragePrivateKeyBytes, ragePublicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(rageKeyFile);
-        var age = new Age();
-        age.AddIdentity(new X25519Recipient(ragePublicKeyBytes, ragePrivateKeyBytes));
-        var ageCiphertext = await File.ReadAllBytesAsync(ageEncrypted);
-        var dotageDecryptedData = age.Decrypt(ageCiphertext);
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddIdentity(new X25519Recipient(ragePrivateKeyBytes, ragePublicKeyBytes)), cts.Token);
+        var ageCiphertext = await File.ReadAllBytesAsync(ageEncrypted, cts.Token);
+        var dotageDecryptedData = await Task.Run(() => age.Decrypt(ageCiphertext), cts.Token);
         Assert.Equal(testData, dotageDecryptedData);
-        await File.WriteAllBytesAsync(dotageDecrypted, dotageDecryptedData);
+        await File.WriteAllBytesAsync(dotageDecrypted, dotageDecryptedData, cts.Token);
 
-        // 3. Re-encrypt with dotage using dotage public key
         var dotageReEncrypted = Path.Combine(testDir, $"dotage_re_encrypted_{testNumber}.age");
-        var dotageAge = new Age();
+        var dotageAge = await Task.Run(() => new Age(), cts.Token);
         var dotagePublicKey = KeyFileUtils.DecodeAgePublicKey(dotagePublicKeyLine);
-        dotageAge.AddRecipient(new X25519Recipient(dotagePublicKey));
-        var dotageReCiphertext = dotageAge.Encrypt(dotageDecryptedData);
-        await File.WriteAllBytesAsync(dotageReEncrypted, dotageReCiphertext);
+        await Task.Run(() => dotageAge.AddRecipient(new X25519Recipient(dotagePublicKey)), cts.Token);
+        var dotageReCiphertext = await Task.Run(() => dotageAge.Encrypt(dotageDecryptedData), cts.Token);
+        await File.WriteAllBytesAsync(dotageReEncrypted, dotageReCiphertext, cts.Token);
 
-        // 4. Decrypt with rage using dotage private key
         var rageDecrypted = Path.Combine(testDir, $"rage_decrypted_{testNumber}.txt");
         var (dotagePrivateKeyBytes, dotagePublicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(dotageKeyFile);
         await TestUtils.RunCommandAsync("rage", $"-d -i {dotageKeyFile} -o {rageDecrypted} {dotageReEncrypted}");
-        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted);
+        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted, cts.Token);
+        logger.LogTrace("Read rage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", rageDecrypted, rageDecryptedData.Length, BitConverter.ToString(rageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, rageDecryptedData);
     }
 
     private async Task TestKeyBasedRageToDotAgeToAge(string testDir, byte[] testData, string ageKeyFile, string rageKeyFile, string dotageKeyFile)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Key-based: Rage -> DotAge -> Age ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // Extract public keys
         var (_, agePublicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
         var (_, ragePublicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var (_, dotagePublicKeyLine) = KeyFileUtils.ParseKeyFile(dotageKeyFile);
 
-        // 1. Encrypt with rage using dotage public key
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
         var rageEncrypted = Path.Combine(testDir, $"rage_encrypted_{testNumber}.age");
         await TestUtils.RunCommandAsync("rage", $"-e -r {dotagePublicKeyLine} -o {rageEncrypted} {plaintextFile}");
 
-        // 2. Decrypt with dotage using dotage private key
         var dotageDecrypted = Path.Combine(testDir, $"dotage_decrypted_{testNumber}.txt");
         var (dotagePrivateKeyBytes, dotagePublicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(dotageKeyFile);
-        var age = new Age();
-        age.AddIdentity(new X25519Recipient(dotagePublicKeyBytes, dotagePrivateKeyBytes));
-        var rageCiphertext = await File.ReadAllBytesAsync(rageEncrypted);
-        var dotageDecryptedData = age.Decrypt(rageCiphertext);
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddIdentity(new X25519Recipient(dotagePrivateKeyBytes, dotagePublicKeyBytes)), cts.Token);
+        var rageCiphertext = await File.ReadAllBytesAsync(rageEncrypted, cts.Token);
+        var dotageDecryptedData = await Task.Run(() => age.Decrypt(rageCiphertext), cts.Token);
         Assert.Equal(testData, dotageDecryptedData);
-        await File.WriteAllBytesAsync(dotageDecrypted, dotageDecryptedData);
+        await File.WriteAllBytesAsync(dotageDecrypted, dotageDecryptedData, cts.Token);
 
-        // 3. Re-encrypt with dotage using age public key
         var dotageReEncrypted = Path.Combine(testDir, $"dotage_re_encrypted_{testNumber}.age");
-        var dotageAge = new Age();
+        var dotageAge = await Task.Run(() => new Age(), cts.Token);
         var agePublicKey = KeyFileUtils.DecodeAgePublicKey(agePublicKeyLine);
-        dotageAge.AddRecipient(new X25519Recipient(agePublicKey));
-        var dotageReCiphertext = dotageAge.Encrypt(dotageDecryptedData);
-        await File.WriteAllBytesAsync(dotageReEncrypted, dotageReCiphertext);
+        await Task.Run(() => dotageAge.AddRecipient(new X25519Recipient(agePublicKey)), cts.Token);
+        var dotageReCiphertext = await Task.Run(() => dotageAge.Encrypt(dotageDecryptedData), cts.Token);
+        await File.WriteAllBytesAsync(dotageReEncrypted, dotageReCiphertext, cts.Token);
 
-        // 4. Decrypt with age using age private key
         var ageDecrypted = Path.Combine(testDir, $"age_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandAsync("age", $"-d -i {ageKeyFile} -o {ageDecrypted} {dotageReEncrypted}");
-        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted);
+        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted, cts.Token);
+        logger.LogTrace("Read age decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", ageDecrypted, ageDecryptedData.Length, BitConverter.ToString(ageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, ageDecryptedData);
     }
 
     private async Task TestKeyBasedDotAgeToRageToAge(string testDir, byte[] testData, string ageKeyFile, string rageKeyFile, string dotageKeyFile)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Key-based: DotAge -> Rage -> Age ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // Extract public keys
         var (_, agePublicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
         var (_, ragePublicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var (_, dotagePublicKeyLine) = KeyFileUtils.ParseKeyFile(dotageKeyFile);
 
-        // 1. Encrypt with dotage using rage public key
         var dotageEncrypted = Path.Combine(testDir, $"dotage_encrypted_{testNumber}.age");
-        var age = new Age();
+        var age = await Task.Run(() => new Age(), cts.Token);
         var ragePublicKey = KeyFileUtils.DecodeAgePublicKey(ragePublicKeyLine);
-        age.AddRecipient(new X25519Recipient(ragePublicKey));
-        var dotageCiphertext = age.Encrypt(testData);
-        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext);
+        await Task.Run(() => age.AddRecipient(new X25519Recipient(ragePublicKey)), cts.Token);
+        var dotageCiphertext = await Task.Run(() => age.Encrypt(testData), cts.Token);
+        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext, cts.Token);
+        logger.LogTrace("Wrote dotage encrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageEncrypted, dotageCiphertext.Length, BitConverter.ToString(dotageCiphertext.Take(32).ToArray()));
 
-        // 2. Decrypt with rage using rage private key
         var rageDecrypted = Path.Combine(testDir, $"rage_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandAsync("rage", $"-d -i {rageKeyFile} -o {rageDecrypted} {dotageEncrypted}");
-        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted);
+        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted, cts.Token);
+        logger.LogTrace("Read rage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", rageDecrypted, rageDecryptedData.Length, BitConverter.ToString(rageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, rageDecryptedData);
 
-        // 3. Re-encrypt with rage using age public key
         var rageReEncrypted = Path.Combine(testDir, $"rage_re_encrypted_{testNumber}.age");
         await TestUtils.RunCommandAsync("rage", $"-e -r {agePublicKeyLine} -o {rageReEncrypted} {rageDecrypted}");
 
-        // 4. Decrypt with age using age private key
         var ageDecrypted = Path.Combine(testDir, $"age_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandAsync("age", $"-d -i {ageKeyFile} -o {ageDecrypted} {rageReEncrypted}");
-        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted);
+        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted, cts.Token);
+        logger.LogTrace("Read age decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", ageDecrypted, ageDecryptedData.Length, BitConverter.ToString(ageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, ageDecryptedData);
     }
 
     private async Task TestKeyBasedAgeToRageToDotAge(string testDir, byte[] testData, string ageKeyFile, string rageKeyFile, string dotageKeyFile)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Key-based: Age -> Rage -> DotAge ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // Extract public keys
         var (_, agePublicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
         var (_, ragePublicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var (_, dotagePublicKeyLine) = KeyFileUtils.ParseKeyFile(dotageKeyFile);
 
-        // 1. Encrypt with age using dotage public key
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
         var ageEncrypted = Path.Combine(testDir, $"age_encrypted_{testNumber}.age");
-        await TestUtils.RunCommandAsync("age", $"-e -r {dotagePublicKeyLine} -o {ageEncrypted} {plaintextFile}");
+        await TestUtils.RunCommandAsync("age", $"-e -r {ragePublicKeyLine} -o {ageEncrypted} {plaintextFile}");
 
-        // 2. Decrypt with rage using dotage private key
         var rageDecrypted = Path.Combine(testDir, $"rage_decrypted_{testNumber}.txt");
-        await TestUtils.RunCommandAsync("rage", $"-d -i {dotageKeyFile} -o {rageDecrypted} {ageEncrypted}");
-        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted);
+        await TestUtils.RunCommandAsync("rage", $"-d -i {rageKeyFile} -o {rageDecrypted} {ageEncrypted}");
+        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted, cts.Token);
+        logger.LogTrace("Read rage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", rageDecrypted, rageDecryptedData.Length, BitConverter.ToString(rageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, rageDecryptedData);
 
-        // 3. Re-encrypt with rage using age public key
         var rageReEncrypted = Path.Combine(testDir, $"rage_re_encrypted_{testNumber}.age");
         await TestUtils.RunCommandAsync("rage", $"-e -r {agePublicKeyLine} -o {rageReEncrypted} {rageDecrypted}");
 
-        // 4. Decrypt with dotage using age private key
         var dotageDecrypted = Path.Combine(testDir, $"dotage_decrypted_{testNumber}.txt");
         var (agePrivateKeyBytes, agePublicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(ageKeyFile);
-        var age = new Age();
-        age.AddIdentity(new X25519Recipient(agePublicKeyBytes, agePrivateKeyBytes));
-        var rageReCiphertext = await File.ReadAllBytesAsync(rageReEncrypted);
-        var dotageDecryptedData = age.Decrypt(rageReCiphertext);
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddIdentity(new X25519Recipient(agePrivateKeyBytes, agePublicKeyBytes)), cts.Token);
+        var rageReCiphertext = await File.ReadAllBytesAsync(rageReEncrypted, cts.Token);
+        var dotageDecryptedData = await Task.Run(() => age.Decrypt(rageReCiphertext), cts.Token);
+        logger.LogTrace("Read dotage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageDecrypted, dotageDecryptedData.Length, BitConverter.ToString(dotageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, dotageDecryptedData);
     }
 
     private async Task TestKeyBasedRageToAgeToDotAge(string testDir, byte[] testData, string ageKeyFile, string rageKeyFile, string dotageKeyFile)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Key-based: Rage -> Age -> DotAge ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // Extract public keys
         var (_, agePublicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
         var (_, ragePublicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var (_, dotagePublicKeyLine) = KeyFileUtils.ParseKeyFile(dotageKeyFile);
 
-        // 1. Encrypt with rage using age public key
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
         var rageEncrypted = Path.Combine(testDir, $"rage_encrypted_{testNumber}.age");
         await TestUtils.RunCommandAsync("rage", $"-e -r {agePublicKeyLine} -o {rageEncrypted} {plaintextFile}");
 
-        // 2. Decrypt with age using age private key
         var ageDecrypted = Path.Combine(testDir, $"age_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandAsync("age", $"-d -i {ageKeyFile} -o {ageDecrypted} {rageEncrypted}");
-        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted);
+        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted, cts.Token);
+        logger.LogTrace("Read age decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", ageDecrypted, ageDecryptedData.Length, BitConverter.ToString(ageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, ageDecryptedData);
 
-        // 3. Re-encrypt with age using dotage public key
         var ageReEncrypted = Path.Combine(testDir, $"age_re_encrypted_{testNumber}.age");
         await TestUtils.RunCommandAsync("age", $"-e -r {dotagePublicKeyLine} -o {ageReEncrypted} {ageDecrypted}");
 
-        // 4. Decrypt with dotage using dotage private key
         var dotageDecrypted = Path.Combine(testDir, $"dotage_decrypted_{testNumber}.txt");
         var (dotagePrivateKeyBytes, dotagePublicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(dotageKeyFile);
-        var age = new Age();
-        age.AddIdentity(new X25519Recipient(dotagePublicKeyBytes, dotagePrivateKeyBytes));
-        var ageReCiphertext = await File.ReadAllBytesAsync(ageReEncrypted);
-        var dotageDecryptedData = age.Decrypt(ageReCiphertext);
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddIdentity(new X25519Recipient(dotagePrivateKeyBytes, dotagePublicKeyBytes)), cts.Token);
+        var ageReCiphertext = await File.ReadAllBytesAsync(ageReEncrypted, cts.Token);
+        var dotageDecryptedData = await Task.Run(() => age.Decrypt(ageReCiphertext), cts.Token);
+        logger.LogTrace("Read dotage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageDecrypted, dotageDecryptedData.Length, BitConverter.ToString(dotageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, dotageDecryptedData);
     }
 
-    // Passphrase-based tests
     private async Task TestPassphraseBasedDotAgeToAgeToRage(string testDir, byte[] testData, string passphrase)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Passphrase-based: DotAge -> Age -> Rage ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // 1. Encrypt with dotage using passphrase
         var dotageEncrypted = Path.Combine(testDir, $"dotage_encrypted_{testNumber}.age");
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
-        var dotageCiphertext = age.Encrypt(testData);
-        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext);
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
+        var dotageCiphertext = await Task.Run(() => age.Encrypt(testData), cts.Token);
+        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext, cts.Token);
+        logger.LogTrace("Wrote dotage encrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageEncrypted, dotageCiphertext.Length, BitConverter.ToString(dotageCiphertext.Take(32).ToArray()));
 
-        // 2. Decrypt with age using passphrase
         var ageDecrypted = Path.Combine(testDir, $"age_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-d -o {ageDecrypted} {dotageEncrypted}");
-        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted);
+        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted, cts.Token);
+        logger.LogTrace("Read age decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", ageDecrypted, ageDecryptedData.Length, BitConverter.ToString(ageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, ageDecryptedData);
 
-        // 3. Re-encrypt with age using passphrase
         var ageReEncrypted = Path.Combine(testDir, $"age_re_encrypted_{testNumber}.age");
         await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-e -p -o {ageReEncrypted} {ageDecrypted}");
 
-        // 4. Decrypt with rage using passphrase
         var rageDecrypted = Path.Combine(testDir, $"rage_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandWithExpectAsync("rage", passphrase, $"-d -o {rageDecrypted} {ageReEncrypted}");
-        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted);
+        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted, cts.Token);
+        logger.LogTrace("Read rage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", rageDecrypted, rageDecryptedData.Length, BitConverter.ToString(rageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, rageDecryptedData);
     }
 
     private async Task TestPassphraseBasedAgeToDotAgeToRage(string testDir, byte[] testData, string passphrase)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Passphrase-based: Age -> DotAge -> Rage ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // 1. Encrypt with age using passphrase
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
         var ageEncrypted = Path.Combine(testDir, $"age_encrypted_{testNumber}.age");
         await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-e -p -o {ageEncrypted} {plaintextFile}");
 
-        // 2. Decrypt with dotage using passphrase
         var dotageDecrypted = Path.Combine(testDir, $"dotage_decrypted_{testNumber}.txt");
-        var age = new Age();
-        age.AddIdentity(new ScryptIdentity(passphrase));
-        var ageCiphertext = await File.ReadAllBytesAsync(ageEncrypted);
-        var dotageDecryptedData = age.Decrypt(ageCiphertext);
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddIdentity(new ScryptIdentity(passphrase)), cts.Token);
+        var ageCiphertext = await File.ReadAllBytesAsync(ageEncrypted, cts.Token);
+        var dotageDecryptedData = await Task.Run(() => age.Decrypt(ageCiphertext), cts.Token);
         Assert.Equal(testData, dotageDecryptedData);
-        await File.WriteAllBytesAsync(dotageDecrypted, dotageDecryptedData);
+        await File.WriteAllBytesAsync(dotageDecrypted, dotageDecryptedData, cts.Token);
+        logger.LogTrace("Wrote dotage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageDecrypted, dotageDecryptedData.Length, BitConverter.ToString(dotageDecryptedData.Take(32).ToArray()));
 
-        // 3. Re-encrypt with dotage using passphrase
         var dotageReEncrypted = Path.Combine(testDir, $"dotage_re_encrypted_{testNumber}.age");
-        var dotageAge = new Age();
-        dotageAge.AddRecipient(new ScryptRecipient(passphrase));
-        var dotageReCiphertext = dotageAge.Encrypt(dotageDecryptedData);
-        await File.WriteAllBytesAsync(dotageReEncrypted, dotageReCiphertext);
+        var dotageAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => dotageAge.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
+        var dotageReCiphertext = await Task.Run(() => dotageAge.Encrypt(dotageDecryptedData), cts.Token);
+        await File.WriteAllBytesAsync(dotageReEncrypted, dotageReCiphertext, cts.Token);
 
-        // 4. Decrypt with rage using passphrase
         var rageDecrypted = Path.Combine(testDir, $"rage_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandWithExpectAsync("rage", passphrase, $"-d -o {rageDecrypted} {dotageReEncrypted}");
-        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted);
+        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted, cts.Token);
+        logger.LogTrace("Read rage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", rageDecrypted, rageDecryptedData.Length, BitConverter.ToString(rageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, rageDecryptedData);
     }
 
     private async Task TestPassphraseBasedRageToDotAgeToAge(string testDir, byte[] testData, string passphrase)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Passphrase-based: Rage -> DotAge -> Age ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // 1. Encrypt with rage using passphrase
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
         var rageEncrypted = Path.Combine(testDir, $"rage_encrypted_{testNumber}.age");
         await TestUtils.RunCommandWithExpectAsync("rage", passphrase, $"-e -p -o {rageEncrypted} {plaintextFile}");
 
-        // 2. Decrypt with dotage using passphrase
         var dotageDecrypted = Path.Combine(testDir, $"dotage_decrypted_{testNumber}.txt");
-        var age = new Age();
+        var age = await Task.Run(() => new Age(), cts.Token);
         age.AddIdentity(new ScryptIdentity(passphrase));
-        var rageCiphertext = await File.ReadAllBytesAsync(rageEncrypted);
-        var dotageDecryptedData = age.Decrypt(rageCiphertext);
+        var rageCiphertext = await File.ReadAllBytesAsync(rageEncrypted, cts.Token);
+        var dotageDecryptedData = await Task.Run(() => age.Decrypt(rageCiphertext), cts.Token);
         Assert.Equal(testData, dotageDecryptedData);
-        await File.WriteAllBytesAsync(dotageDecrypted, dotageDecryptedData);
+        await File.WriteAllBytesAsync(dotageDecrypted, dotageDecryptedData, cts.Token);
+        logger.LogTrace("Wrote dotage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageDecrypted, dotageDecryptedData.Length, BitConverter.ToString(dotageDecryptedData.Take(32).ToArray()));
 
-        // 3. Re-encrypt with dotage using passphrase
         var dotageReEncrypted = Path.Combine(testDir, $"dotage_re_encrypted_{testNumber}.age");
-        var dotageAge = new Age();
-        dotageAge.AddRecipient(new ScryptRecipient(passphrase));
-        var dotageReCiphertext = dotageAge.Encrypt(dotageDecryptedData);
-        await File.WriteAllBytesAsync(dotageReEncrypted, dotageReCiphertext);
+        var dotageAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => dotageAge.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
+        var dotageReCiphertext = await Task.Run(() => dotageAge.Encrypt(dotageDecryptedData), cts.Token);
+        await File.WriteAllBytesAsync(dotageReEncrypted, dotageReCiphertext, cts.Token);
 
-        // 4. Decrypt with age using passphrase
         var ageDecrypted = Path.Combine(testDir, $"age_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-d -o {ageDecrypted} {dotageReEncrypted}");
-        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted);
+        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted, cts.Token);
+        logger.LogTrace("Read age decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", ageDecrypted, ageDecryptedData.Length, BitConverter.ToString(ageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, ageDecryptedData);
     }
 
     private async Task TestPassphraseBasedDotAgeToRageToAge(string testDir, byte[] testData, string passphrase)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Passphrase-based: DotAge -> Rage -> Age ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // 1. Encrypt with dotage using passphrase
         var dotageEncrypted = Path.Combine(testDir, $"dotage_encrypted_{testNumber}.age");
-        var age = new Age();
+        var age = await Task.Run(() => new Age(), cts.Token);
         age.AddRecipient(new ScryptRecipient(passphrase));
-        var dotageCiphertext = age.Encrypt(testData);
-        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext);
+        var dotageCiphertext = await Task.Run(() => age.Encrypt(testData), cts.Token);
+        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext, cts.Token);
+        logger.LogTrace("Wrote dotage encrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageEncrypted, dotageCiphertext.Length, BitConverter.ToString(dotageCiphertext.Take(32).ToArray()));
 
-        // 2. Decrypt with rage using passphrase
         var rageDecrypted = Path.Combine(testDir, $"rage_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandWithExpectAsync("rage", passphrase, $"-d -o {rageDecrypted} {dotageEncrypted}");
-        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted);
+        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted, cts.Token);
+        logger.LogTrace("Read rage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", rageDecrypted, rageDecryptedData.Length, BitConverter.ToString(rageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, rageDecryptedData);
 
-        // 3. Re-encrypt with rage using passphrase
         var rageReEncrypted = Path.Combine(testDir, $"rage_re_encrypted_{testNumber}.age");
         await TestUtils.RunCommandWithExpectAsync("rage", passphrase, $"-e -p -o {rageReEncrypted} {rageDecrypted}");
 
-        // 4. Decrypt with age using passphrase
         var ageDecrypted = Path.Combine(testDir, $"age_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-d -o {ageDecrypted} {rageReEncrypted}");
-        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted);
+        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted, cts.Token);
+        logger.LogTrace("Read age decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", ageDecrypted, ageDecryptedData.Length, BitConverter.ToString(ageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, ageDecryptedData);
     }
 
     private async Task TestPassphraseBasedAgeToRageToDotAge(string testDir, byte[] testData, string passphrase)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Passphrase-based: Age -> Rage -> DotAge ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // 1. Encrypt with age using passphrase
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
         var ageEncrypted = Path.Combine(testDir, $"age_encrypted_{testNumber}.age");
         await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-e -p -o {ageEncrypted} {plaintextFile}");
 
-        // 2. Decrypt with rage using passphrase
         var rageDecrypted = Path.Combine(testDir, $"rage_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandWithExpectAsync("rage", passphrase, $"-d -o {rageDecrypted} {ageEncrypted}");
-        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted);
+        var rageDecryptedData = await File.ReadAllBytesAsync(rageDecrypted, cts.Token);
+        logger.LogTrace("Read rage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", rageDecrypted, rageDecryptedData.Length, BitConverter.ToString(rageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, rageDecryptedData);
 
-        // 3. Re-encrypt with rage using passphrase
         var rageReEncrypted = Path.Combine(testDir, $"rage_re_encrypted_{testNumber}.age");
         await TestUtils.RunCommandWithExpectAsync("rage", passphrase, $"-e -p -o {rageReEncrypted} {rageDecrypted}");
 
-        // 4. Decrypt with dotage using passphrase
         var dotageDecrypted = Path.Combine(testDir, $"dotage_decrypted_{testNumber}.txt");
-        var age = new Age();
+        var age = await Task.Run(() => new Age(), cts.Token);
         age.AddIdentity(new ScryptIdentity(passphrase));
-        var rageReCiphertext = await File.ReadAllBytesAsync(rageReEncrypted);
-        var dotageDecryptedData = age.Decrypt(rageReCiphertext);
+        var rageReCiphertext = await File.ReadAllBytesAsync(rageReEncrypted, cts.Token);
+        var dotageDecryptedData = await Task.Run(() => age.Decrypt(rageReCiphertext), cts.Token);
+        logger.LogTrace("Read dotage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageDecrypted, dotageDecryptedData.Length, BitConverter.ToString(dotageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, dotageDecryptedData);
     }
 
     private async Task TestPassphraseBasedRageToAgeToDotAge(string testDir, byte[] testData, string passphrase)
     {
+        var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
+        logger.LogInformation("=== PERMUTATION: Passphrase-based: Rage -> Age -> DotAge ===");
+        
+        using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
-        // 1. Encrypt with rage using passphrase
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
         var rageEncrypted = Path.Combine(testDir, $"rage_encrypted_{testNumber}.age");
         await TestUtils.RunCommandWithExpectAsync("rage", passphrase, $"-e -p -o {rageEncrypted} {plaintextFile}");
 
-        // 2. Decrypt with age using passphrase
         var ageDecrypted = Path.Combine(testDir, $"age_decrypted_{testNumber}.txt");
         await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-d -o {ageDecrypted} {rageEncrypted}");
-        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted);
+        var ageDecryptedData = await File.ReadAllBytesAsync(ageDecrypted, cts.Token);
+        logger.LogTrace("Read age decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", ageDecrypted, ageDecryptedData.Length, BitConverter.ToString(ageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, ageDecryptedData);
 
-        // 3. Re-encrypt with age using passphrase
         var ageReEncrypted = Path.Combine(testDir, $"age_re_encrypted_{testNumber}.age");
         await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-e -p -o {ageReEncrypted} {ageDecrypted}");
 
-        // 4. Decrypt with dotage using passphrase
         var dotageDecrypted = Path.Combine(testDir, $"dotage_decrypted_{testNumber}.txt");
-        var age = new Age();
+        var age = await Task.Run(() => new Age(), cts.Token);
         age.AddIdentity(new ScryptIdentity(passphrase));
-        var ageReCiphertext = await File.ReadAllBytesAsync(ageReEncrypted);
-        var dotageDecryptedData = age.Decrypt(ageReCiphertext);
+        var ageReCiphertext = await File.ReadAllBytesAsync(ageReEncrypted, cts.Token);
+        var dotageDecryptedData = await Task.Run(() => age.Decrypt(ageReCiphertext), cts.Token);
+        logger.LogTrace("Read dotage decrypted file: {Path}, length: {Length}, first 32 bytes: {Prefix}", dotageDecrypted, dotageDecryptedData.Length, BitConverter.ToString(dotageDecryptedData.Take(32).ToArray()));
         Assert.Equal(testData, dotageDecryptedData);
     }
-
-    private byte[] GenerateRandomTestData(int seed)
+    
+    private byte[] GenerateRandomTestData(int dataSize)
     {
-        var random = new Random(seed);
-        var dataSize = random.Next(1, 1024 * 1024); // 1 byte to 1MB
-        var data = new byte[dataSize];
-        random.NextBytes(data);
-        
-        // Occasionally add some text data for better coverage
-        if (random.Next(10) == 0)
+        if (_random.Next(2) == 0)
         {
-            var text = $"Test data with seed {seed} and random text: {Guid.NewGuid()}";
-            data = Encoding.UTF8.GetBytes(text);
+            var data = new byte[dataSize];
+            _random.NextBytes(data);
+            return data;
         }
-        
-        return data;
+        else
+        {
+            var textBuilder = new StringBuilder();
+
+            var lines = _random.Next(1, 20);
+            for (int line = 0; line < lines; line++)
+            {
+                var words = _random.Next(1, 20);
+                for (int word = 0; word < words; word++)
+                {
+                    var wordLength = _random.Next(1, 15);
+                    for (int charIndex = 0; charIndex < wordLength; charIndex++)
+                    {
+                        var asciiChar = (char)_random.Next(32, 127);
+                        textBuilder.Append(asciiChar);
+                    }
+
+                    if (word < words - 1) textBuilder.Append(' ');
+                }
+
+                if (line < lines - 1) textBuilder.AppendLine();
+            }
+
+            var text = textBuilder.ToString();
+            var data = Encoding.UTF8.GetBytes(text);
+
+            if (data.Length > dataSize)
+            {
+                var truncatedData = new byte[dataSize];
+                Array.Copy(data, truncatedData, dataSize);
+                return truncatedData;
+            }
+            
+            return data;
+        }
     }
 
     private string GenerateRandomPassphrase(int seed)
     {
-        var random = new Random(seed);
-        var length = random.Next(8, 64);
-        // Use only ASCII-safe characters to avoid shell escaping issues
-        var chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        var passphrase = new StringBuilder();
-        
-        for (int i = 0; i < length; i++)
+        var rng = new Random(seed);
+        var words = new List<string>(10);
+
+        for (int i = 0; i < 10; i++)
         {
-            passphrase.Append(chars[random.Next(chars.Length)]);
+            words.Add(Bip39Wordlist.GetRandomWord(rng));
         }
-        
-        return passphrase.ToString();
+
+        return string.Join("-", words);
     }
 } 

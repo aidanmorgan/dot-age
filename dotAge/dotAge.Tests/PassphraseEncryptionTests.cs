@@ -1,18 +1,25 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using DotAge.Core;
 using DotAge.Core.Recipients;
 using DotAge.Core.Exceptions;
+using Microsoft.Extensions.Logging;
 
 namespace DotAge.Tests;
 
 public class PassphraseEncryptionTests : IDisposable
 {
+    private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(30);
     private readonly string _tempDir;
+    private readonly ILogger _logger;
 
     public PassphraseEncryptionTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("passphrase-tests");
+        var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
+        _logger = loggerFactory.CreateLogger<PassphraseEncryptionTests>();
     }
 
     public void Dispose()
@@ -21,190 +28,203 @@ public class PassphraseEncryptionTests : IDisposable
     }
 
     [Fact]
-    public void BasicPassphraseEncryptionDecryption()
+    public async Task BasicPassphraseEncryptionDecryption()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "test-passphrase-123";
         var plaintext = Encoding.UTF8.GetBytes("Hello, this is a test message for passphrase encryption!");
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
 
         // Act - Encrypt
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Assert - Verify ciphertext is different from plaintext
         Assert.NotEqual(plaintext, ciphertext);
         Assert.True(ciphertext.Length > plaintext.Length);
 
         // Act - Decrypt
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase));
-        var decrypted = decryptedAge.Decrypt(ciphertext);
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
+        var decrypted = await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token);
 
         // Assert - Verify decrypted matches original
         Assert.Equal(plaintext, decrypted);
     }
 
     [Fact]
-    public void PassphraseEncryptionWithDifferentPassphrases()
+    public async Task PassphraseEncryptionWithDifferentPassphrases()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase1 = "correct-passphrase";
         var passphrase2 = "wrong-passphrase";
         var plaintext = Encoding.UTF8.GetBytes("Test data");
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase1));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase1)), cts.Token);
 
         // Act - Encrypt with correct passphrase
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Act & Assert - Try to decrypt with wrong passphrase
-        var wrongAge = new Age();
-        wrongAge.AddIdentity(new ScryptRecipient(passphrase2));
+        var wrongAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => wrongAge.AddIdentity(new ScryptRecipient(passphrase2)), cts.Token);
 
-        Assert.Throws<AgeDecryptionException>(() => wrongAge.Decrypt(ciphertext));
+        await Assert.ThrowsAsync<AgeDecryptionException>(async () => 
+            await Task.Run(() => wrongAge.Decrypt(ciphertext), cts.Token));
     }
 
     [Fact]
-    public void PassphraseEncryptionWithEmptyPassphrase()
+    public async Task PassphraseEncryptionWithEmptyPassphrase()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "";
         var plaintext = Encoding.UTF8.GetBytes("Test data");
 
-        var age = new Age();
+        var age = await Task.Run(() => new Age(), cts.Token);
 
         // Act & Assert - Should throw when creating ScryptRecipient with empty passphrase
-        Assert.Throws<AgeKeyException>(() => age.AddRecipient(new ScryptRecipient(passphrase)));
+        await Assert.ThrowsAsync<AgeKeyException>(async () => 
+            await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token));
     }
 
     [Fact]
-    public void PassphraseEncryptionWithNullPassphrase()
+    public async Task PassphraseEncryptionWithNullPassphrase()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         string? passphrase = null;
-        var age = new Age();
+        var age = await Task.Run(() => new Age(), cts.Token);
 
         // Act & Assert - Should throw when creating ScryptRecipient with null passphrase
-        Assert.Throws<AgeKeyException>(() => age.AddRecipient(new ScryptRecipient(passphrase!)));
+        await Assert.ThrowsAsync<AgeKeyException>(async () => 
+            await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase!)), cts.Token));
     }
 
     [Fact]
-    public void PassphraseEncryptionWithLongPassphrase()
+    public async Task PassphraseEncryptionWithLongPassphrase()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = new string('x', 1000); // Very long passphrase
         var plaintext = Encoding.UTF8.GetBytes("Test data with long passphrase");
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
 
         // Act - Encrypt
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Act - Decrypt
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase));
-        var decrypted = decryptedAge.Decrypt(ciphertext);
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
+        var decrypted = await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token);
 
         // Assert - Verify decrypted matches original
         Assert.Equal(plaintext, decrypted);
     }
 
     [Fact]
-    public void PassphraseEncryptionWithSpecialCharacters()
+    public async Task PassphraseEncryptionWithSpecialCharacters()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~";
         var plaintext = Encoding.UTF8.GetBytes("Test data with special characters in passphrase");
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
 
         // Act - Encrypt
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Act - Decrypt
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase));
-        var decrypted = decryptedAge.Decrypt(ciphertext);
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
+        var decrypted = await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token);
 
         // Assert - Verify decrypted matches original
         Assert.Equal(plaintext, decrypted);
     }
 
     [Fact]
-    public void PassphraseEncryptionWithUnicodeCharacters()
+    public async Task PassphraseEncryptionWithUnicodeCharacters()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "🔐🔒🔑密码パスワードكلمةالمرور";
         var plaintext = Encoding.UTF8.GetBytes("Test data with unicode passphrase");
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
 
         // Act - Encrypt
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Act - Decrypt
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase));
-        var decrypted = decryptedAge.Decrypt(ciphertext);
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
+        var decrypted = await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token);
 
         // Assert - Verify decrypted matches original
         Assert.Equal(plaintext, decrypted);
     }
 
     [Fact]
-    public void PassphraseEncryptionWithLargeData()
+    public async Task PassphraseEncryptionWithLargeData()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "test-passphrase-large-data";
         var plaintext = new byte[1024 * 1024]; // 1MB of data
         new Random(42).NextBytes(plaintext); // Fill with random data
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
 
         // Act - Encrypt
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Act - Decrypt
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase));
-        var decrypted = decryptedAge.Decrypt(ciphertext);
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
+        var decrypted = await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token);
 
         // Assert - Verify decrypted matches original
         Assert.Equal(plaintext, decrypted);
     }
 
     [Fact]
-    public void PassphraseEncryptionWithEmptyData()
+    public async Task PassphraseEncryptionWithEmptyData()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "test-passphrase-empty";
         var plaintext = new byte[0];
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
 
         // Act - Encrypt
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Act - Decrypt
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase));
-        var decrypted = decryptedAge.Decrypt(ciphertext);
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
+        var decrypted = await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token);
 
         // Assert - Verify decrypted matches original
         Assert.Equal(plaintext, decrypted);
     }
 
     [Fact]
-    public void PassphraseEncryptionFileOperations()
+    public async Task PassphraseEncryptionFileOperations()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "test-passphrase-file";
         var plaintext = Encoding.UTF8.GetBytes("Test data for file operations");
@@ -214,113 +234,117 @@ public class PassphraseEncryptionTests : IDisposable
 
         File.WriteAllBytes(inputFile, plaintext);
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
 
         // Act - Encrypt file
-        age.EncryptFile(inputFile, encryptedFile);
+        await Task.Run(() => age.EncryptFile(inputFile, encryptedFile), cts.Token);
 
         // Assert - Verify encrypted file exists and is different
         Assert.True(File.Exists(encryptedFile));
-        var encryptedBytes = File.ReadAllBytes(encryptedFile);
+        var encryptedBytes = await File.ReadAllBytesAsync(encryptedFile, cts.Token);
         Assert.NotEqual(plaintext, encryptedBytes);
 
         // Act - Decrypt file
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase));
-        decryptedAge.DecryptFile(encryptedFile, decryptedFile);
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
+        await Task.Run(() => decryptedAge.DecryptFile(encryptedFile, decryptedFile), cts.Token);
 
         // Assert - Verify decrypted file matches original
         Assert.True(File.Exists(decryptedFile));
-        var decryptedBytes = File.ReadAllBytes(decryptedFile);
+        var decryptedBytes = await File.ReadAllBytesAsync(decryptedFile, cts.Token);
         Assert.Equal(plaintext, decryptedBytes);
     }
 
     [Fact]
-    public void PassphraseEncryptionWithMultipleIdentities()
+    public async Task PassphraseEncryptionWithMultipleIdentities()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase1 = "passphrase-1";
         var passphrase2 = "passphrase-2";
         var plaintext = Encoding.UTF8.GetBytes("Test data with multiple identities");
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase1));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase1)), cts.Token);
 
         // Act - Encrypt
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Act - Decrypt with first identity
-        var decryptedAge1 = new Age();
-        decryptedAge1.AddIdentity(new ScryptRecipient(passphrase1));
-        var decrypted1 = decryptedAge1.Decrypt(ciphertext);
+        var decryptedAge1 = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge1.AddIdentity(new ScryptRecipient(passphrase1)), cts.Token);
+        var decrypted1 = await Task.Run(() => decryptedAge1.Decrypt(ciphertext), cts.Token);
 
         // Assert - Verify decrypted matches original
         Assert.Equal(plaintext, decrypted1);
 
         // Act - Decrypt with second identity (should fail)
-        var decryptedAge2 = new Age();
-        decryptedAge2.AddIdentity(new ScryptRecipient(passphrase2));
+        var decryptedAge2 = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge2.AddIdentity(new ScryptRecipient(passphrase2)), cts.Token);
 
-        Assert.Throws<AgeDecryptionException>(() => decryptedAge2.Decrypt(ciphertext));
+        await Assert.ThrowsAsync<AgeDecryptionException>(async () => 
+            await Task.Run(() => decryptedAge2.Decrypt(ciphertext), cts.Token));
     }
 
     [Fact]
-    public void PassphraseEncryptionWithMultipleRecipients()
+    public async Task PassphraseEncryptionWithMultipleRecipients()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase1 = "passphrase-1";
         var passphrase2 = "passphrase-2";
         var plaintext = Encoding.UTF8.GetBytes("Test data with multiple recipients");
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase1));
-        age.AddRecipient(new ScryptRecipient(passphrase2));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase1)), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase2)), cts.Token);
 
         // Act - Encrypt
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Act - Decrypt with first passphrase
-        var decryptedAge1 = new Age();
-        decryptedAge1.AddIdentity(new ScryptRecipient(passphrase1));
-        var decrypted1 = decryptedAge1.Decrypt(ciphertext);
+        var decryptedAge1 = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge1.AddIdentity(new ScryptRecipient(passphrase1)), cts.Token);
+        var decrypted1 = await Task.Run(() => decryptedAge1.Decrypt(ciphertext), cts.Token);
 
         // Assert - Verify decrypted matches original
         Assert.Equal(plaintext, decrypted1);
 
         // Act - Decrypt with second passphrase
-        var decryptedAge2 = new Age();
-        decryptedAge2.AddIdentity(new ScryptRecipient(passphrase2));
-        var decrypted2 = decryptedAge2.Decrypt(ciphertext);
+        var decryptedAge2 = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge2.AddIdentity(new ScryptRecipient(passphrase2)), cts.Token);
+        var decrypted2 = await Task.Run(() => decryptedAge2.Decrypt(ciphertext), cts.Token);
 
         // Assert - Verify decrypted matches original
         Assert.Equal(plaintext, decrypted2);
     }
 
     [Fact]
-    public void PassphraseEncryptionDeterministicOutput()
+    public async Task PassphraseEncryptionDeterministicOutput()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "test-deterministic";
         var plaintext = Encoding.UTF8.GetBytes("Test data for deterministic output");
 
         // Act - Encrypt same data twice
-        var age1 = new Age();
-        age1.AddRecipient(new ScryptRecipient(passphrase));
-        var ciphertext1 = age1.Encrypt(plaintext);
+        var age1 = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age1.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
+        var ciphertext1 = await Task.Run(() => age1.Encrypt(plaintext), cts.Token);
 
-        var age2 = new Age();
-        age2.AddRecipient(new ScryptRecipient(passphrase));
-        var ciphertext2 = age2.Encrypt(plaintext);
+        var age2 = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age2.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
+        var ciphertext2 = await Task.Run(() => age2.Encrypt(plaintext), cts.Token);
 
         // Assert - Verify outputs are different (due to random salt)
         Assert.NotEqual(ciphertext1, ciphertext2);
 
         // Act - Decrypt both
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase));
-        var decrypted1 = decryptedAge.Decrypt(ciphertext1);
-        var decrypted2 = decryptedAge.Decrypt(ciphertext2);
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
+        var decrypted1 = await Task.Run(() => decryptedAge.Decrypt(ciphertext1), cts.Token);
+        var decrypted2 = await Task.Run(() => decryptedAge.Decrypt(ciphertext2), cts.Token);
 
         // Assert - Both should decrypt to the same plaintext
         Assert.Equal(plaintext, decrypted1);
@@ -328,59 +352,66 @@ public class PassphraseEncryptionTests : IDisposable
     }
 
     [Fact]
-    public void PassphraseEncryptionWithCorruptedData()
+    public async Task PassphraseEncryptionWithCorruptedData()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "test-corrupted";
         var plaintext = Encoding.UTF8.GetBytes("Test data");
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
 
         // Act - Encrypt
-        var ciphertext = age.Encrypt(plaintext);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Corrupt the ciphertext
         ciphertext[100] ^= 0xFF;
 
         // Act & Assert - Should throw when decrypting corrupted data
-        var decryptedAge = new Age();
-        decryptedAge.AddIdentity(new ScryptRecipient(passphrase));
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
 
-        Assert.Throws<AgeFormatException>(() => decryptedAge.Decrypt(ciphertext));
+        await Assert.ThrowsAsync<AgeFormatException>(async () => 
+            await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token));
     }
 
     [Fact]
-    public void PassphraseEncryptionWithNoRecipients()
+    public async Task PassphraseEncryptionWithNoRecipients()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var plaintext = Encoding.UTF8.GetBytes("Test data");
-        var age = new Age();
+        var age = await Task.Run(() => new Age(), cts.Token);
 
         // Act & Assert - Should throw when no recipients are specified
-        Assert.Throws<AgeEncryptionException>(() => age.Encrypt(plaintext));
+        await Assert.ThrowsAsync<AgeEncryptionException>(async () => 
+            await Task.Run(() => age.Encrypt(plaintext), cts.Token));
     }
 
     [Fact]
-    public void PassphraseDecryptionWithNoIdentities()
+    public async Task PassphraseDecryptionWithNoIdentities()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "test-no-identities";
         var plaintext = Encoding.UTF8.GetBytes("Test data");
 
-        var age = new Age();
-        age.AddRecipient(new ScryptRecipient(passphrase));
-        var ciphertext = age.Encrypt(plaintext);
+        var age = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
+        var ciphertext = await Task.Run(() => age.Encrypt(plaintext), cts.Token);
 
         // Act & Assert - Should throw when no identities are specified
-        var decryptedAge = new Age();
-        Assert.Throws<AgeDecryptionException>(() => decryptedAge.Decrypt(ciphertext));
+        var decryptedAge = await Task.Run(() => new Age(), cts.Token);
+        await Assert.ThrowsAsync<AgeDecryptionException>(async () => 
+            await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token));
     }
 
 
     [Fact(DisplayName = "Scrypt passphrase round-trip compatibility: dotage <-> age <-> rage")]
     public async Task ScryptPassphraseRoundTripCompatibility()
     {
+        using var cts = new CancellationTokenSource(TestTimeout);
         // Arrange
         var passphrase = "test-passphrase-scrypt-compat";
         var plaintext = Encoding.UTF8.GetBytes("DotAge scrypt compatibility test!");
@@ -390,38 +421,37 @@ public class PassphraseEncryptionTests : IDisposable
         var rageEncrypted = Path.Combine(_tempDir, "rage_encrypted.age");
         var ageDecrypted = Path.Combine(_tempDir, "age_decrypted.txt");
         var rageDecrypted = Path.Combine(_tempDir, "rage_decrypted.txt");
-        await File.WriteAllBytesAsync(tempFile, plaintext);
+        await File.WriteAllBytesAsync(tempFile, plaintext, cts.Token);
 
         // 1. Encrypt with dotage using static methods
-        var dotage = new Age();
-        dotage.AddRecipient(new ScryptRecipient(passphrase));
-        var dotageCiphertext = dotage.Encrypt(plaintext);
-        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext);
+        var dotage = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => dotage.AddRecipient(new ScryptRecipient(passphrase)), cts.Token);
+        var dotageCiphertext = await Task.Run(() => dotage.Encrypt(plaintext), cts.Token);
+        await File.WriteAllBytesAsync(dotageEncrypted, dotageCiphertext, cts.Token);
 
         // Decrypt with age and rage CLI (these require passphrase input)
         var ageCli = "age";
         var rageCli = "rage";
-
         // age decrypt
-        await TestUtils.RunCommandWithExpectAsync(ageCli, passphrase, $"-d -o {ageDecrypted} {dotageEncrypted}");
+        await TestUtils.RunCommandWithExpectAsync(ageCli, passphrase, $"-d -o {ageDecrypted} {dotageEncrypted}", _logger);
         // rage decrypt
-        await TestUtils.RunCommandWithExpectAsync(rageCli, passphrase, $"-d -o {rageDecrypted} {dotageEncrypted}");
+        await TestUtils.RunCommandWithExpectAsync(rageCli, passphrase, $"-d -o {rageDecrypted} {dotageEncrypted}", _logger);
 
-        Assert.Equal(plaintext, await File.ReadAllBytesAsync(ageDecrypted));
-        Assert.Equal(plaintext, await File.ReadAllBytesAsync(rageDecrypted));
+        Assert.Equal(plaintext, await File.ReadAllBytesAsync(ageDecrypted, cts.Token));
+        Assert.Equal(plaintext, await File.ReadAllBytesAsync(rageDecrypted, cts.Token));
 
         // 2. Encrypt with age CLI (requires passphrase input), decrypt with dotage
-        await TestUtils.RunCommandWithExpectAsync(ageCli, passphrase, $"-e -p -o {ageEncrypted} {tempFile}");
-        var dotageForDecrypt = new Age();
-        dotageForDecrypt.AddIdentity(new ScryptRecipient(passphrase));
-        var ageCiphertext = await File.ReadAllBytesAsync(ageEncrypted);
-        var decrypted = dotageForDecrypt.Decrypt(ageCiphertext);
+        await TestUtils.RunCommandWithExpectAsync(ageCli, passphrase, $"-e -p -o {ageEncrypted} {tempFile}", _logger);
+        var dotageForDecrypt = await Task.Run(() => new Age(), cts.Token);
+        await Task.Run(() => dotageForDecrypt.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
+        var ageCiphertext = await File.ReadAllBytesAsync(ageEncrypted, cts.Token);
+        var decrypted = await Task.Run(() => dotageForDecrypt.Decrypt(ageCiphertext), cts.Token);
         Assert.Equal(plaintext, decrypted);
 
         // 3. Encrypt with rage CLI (requires passphrase input), decrypt with dotage
-        await TestUtils.RunCommandWithExpectAsync(rageCli, passphrase, $"-e -p -o {rageEncrypted} {tempFile}");
-        var rageCiphertext = await File.ReadAllBytesAsync(rageEncrypted);
-        var decryptedRage = dotageForDecrypt.Decrypt(rageCiphertext);
+        await TestUtils.RunCommandWithExpectAsync(rageCli, passphrase, $"-e -p -o {rageEncrypted} {tempFile}", _logger);
+        var rageCiphertext = await File.ReadAllBytesAsync(rageEncrypted, cts.Token);
+        var decryptedRage = await Task.Run(() => dotageForDecrypt.Decrypt(rageCiphertext), cts.Token);
         Assert.Equal(plaintext, decryptedRage);
     }
 }

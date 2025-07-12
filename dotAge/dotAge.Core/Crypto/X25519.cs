@@ -1,17 +1,23 @@
+using System;
+using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using DotAge.Core.Utils;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
+using NSec.Cryptography;
 
 namespace DotAge.Core.Crypto;
 
 /// <summary>
-///     Provides X25519 key generation and key agreement functionality using Curve25519.NetCore.
+///     Provides X25519 key generation and key agreement functionality.
+///     Implements RFC 7748 specification, matching the Go implementation.
 /// </summary>
 public class X25519
 {
     private static readonly ILogger<X25519> Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<X25519>();
+    private static readonly KeyAgreementAlgorithm Algorithm = KeyAgreementAlgorithm.X25519;
 
     // X25519 key size in bytes
     public const int KeySize = 32;
@@ -23,33 +29,32 @@ public class X25519
     public const string PrivateKeyPrefix = "AGE-SECRET-KEY-";
 
     /// <summary>
-    ///     Generates a new X25519 key pair using Curve25519.NetCore.
+    ///     Generates a new X25519 key pair.
     /// </summary>
     /// <returns>A tuple containing the private and public keys as byte arrays.</returns>
     public static (byte[] privateKey, byte[] publicKey) GenerateKeyPair()
     {
-        // Use Curve25519.NetCore to generate a key pair
-        var privateKey = new byte[KeySize];
-        var publicKey = new byte[KeySize];
-
-        // Generate random private key using cryptographically secure random number generator
-        privateKey = RandomUtils.GenerateRandomBytes(KeySize);
-        Logger.LogTrace("Generated raw private key: {PrivateKeyHex}", BitConverter.ToString(privateKey));
-
-        // Clamp the private key as per RFC 7748
-        ClampPrivateKey(privateKey);
-        Logger.LogTrace("Clamped private key: {ClampedPrivateKeyHex}", BitConverter.ToString(privateKey));
-
-        // Generate public key from private key
-        var curve25519 = new Curve25519.NetCore.Curve25519();
-        publicKey = curve25519.GetPublicKey(privateKey);
-        Logger.LogTrace("Generated public key: {PublicKeyHex}", BitConverter.ToString(publicKey));
-
-        return (privateKey, publicKey);
+        try
+        {
+            var keyCreationParams = new KeyCreationParameters
+            {
+                ExportPolicy = KeyExportPolicies.AllowPlaintextExport
+            };
+            
+            using var key = Key.Create(Algorithm, keyCreationParams);
+            var privateKey = key.Export(KeyBlobFormat.RawPrivateKey);
+            var publicKey = key.PublicKey.Export(KeyBlobFormat.RawPublicKey);
+            return (privateKey, publicKey);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "X25519 key pair generation failed");
+            throw new AgeKeyException("X25519 key pair generation failed", ex);
+        }
     }
 
     /// <summary>
-    ///     Performs X25519 key agreement between a private key and a public key using Curve25519.NetCore.
+    ///     Performs X25519 key agreement between a private key and a public key.
     /// </summary>
     /// <param name="privateKey">The private key as a byte array.</param>
     /// <param name="publicKey">The public key as a byte array.</param>
@@ -62,26 +67,33 @@ public class X25519
         if (publicKey == null || publicKey.Length != KeySize)
             throw new AgeKeyException($"Public key must be {KeySize} bytes");
 
-        Logger.LogTrace("Performing X25519 key agreement");
-        Logger.LogTrace("Private key: {PrivateKeyHex}", BitConverter.ToString(privateKey));
-        Logger.LogTrace("Public key: {PublicKeyHex}", BitConverter.ToString(publicKey));
+        try
+        {
+            var keyCreationParams = new KeyCreationParameters
+            {
+                ExportPolicy = KeyExportPolicies.AllowPlaintextExport
+            };
 
-        // Clamp the private key as per RFC 7748
-        var clampedKey = new byte[KeySize];
-        Buffer.BlockCopy(privateKey, 0, clampedKey, 0, KeySize);
-        ClampPrivateKey(clampedKey);
-        Logger.LogTrace("Clamped private key for key agreement: {ClampedKeyHex}", BitConverter.ToString(clampedKey));
-
-        // Use Curve25519.NetCore for key agreement
-        var curve25519 = new Curve25519.NetCore.Curve25519();
-        var sharedSecret = curve25519.GetSharedSecret(clampedKey, publicKey);
-        Logger.LogTrace("Generated shared secret: {SharedSecretHex}", BitConverter.ToString(sharedSecret));
-
-        return sharedSecret;
+            var sharedSecretCreationParams = new SharedSecretCreationParameters
+            {
+                ExportPolicy = KeyExportPolicies.AllowPlaintextExport
+            };
+            
+            using var nsecPrivateKey = Key.Import(Algorithm, privateKey, KeyBlobFormat.RawPrivateKey, keyCreationParams);
+            var nsecPublicKey = PublicKey.Import(Algorithm, publicKey, KeyBlobFormat.RawPublicKey);
+            
+            using var sharedSecret = Algorithm.Agree(nsecPrivateKey, nsecPublicKey, sharedSecretCreationParams);
+            return sharedSecret?.Export(SharedSecretBlobFormat.RawSharedSecret) ?? throw new AgeKeyException("Key agreement failed to produce shared secret");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "X25519 key agreement failed");
+            throw new AgeKeyException("X25519 key agreement failed", ex);
+        }
     }
 
     /// <summary>
-    ///     Derives the public key from a given private key using Curve25519.NetCore.
+    ///     Derives the public key from a given private key.
     /// </summary>
     /// <param name="privateKey">The private key as a byte array.</param>
     /// <returns>The public key as a byte array.</returns>
@@ -90,37 +102,20 @@ public class X25519
         if (privateKey == null || privateKey.Length != KeySize)
             throw new AgeKeyException($"Private key must be {KeySize} bytes");
 
-        Logger.LogTrace("Input private key: {PrivateKeyHex}", BitConverter.ToString(privateKey));
-
-        ClampPrivateKey(privateKey);
-        Logger.LogTrace("Clamped private key: {ClampedPrivateKeyHex}", BitConverter.ToString(privateKey));
-
-        var curve25519 = new Curve25519.NetCore.Curve25519();
-        var publicKey = curve25519.GetPublicKey(privateKey);
-        Logger.LogTrace("Derived public key: {PublicKeyHex}", BitConverter.ToString(publicKey));
-
-        return publicKey;
-    }
-
-    /// <summary>
-    ///     Clamps a private key as specified in RFC 7748.
-    ///     This ensures the key is properly formatted for X25519 operations.
-    /// </summary>
-    /// <param name="privateKey">The private key to clamp (modified in place).</param>
-    private static void ClampPrivateKey(byte[] privateKey)
-    {
-        if (privateKey == null || privateKey.Length != KeySize)
-            throw new AgeKeyException($"Private key must be {KeySize} bytes");
-
-        Logger.LogTrace("Clamping private key according to RFC 7748");
-        Logger.LogTrace("Original private key: {OriginalKeyHex}", BitConverter.ToString(privateKey));
-
-        // Clamp the private key as per RFC 7748
-        privateKey[0] &= 248; // Clear bits 0, 1, 2
-        privateKey[31] &= 127; // Clear bit 255
-        privateKey[31] |= 64; // Set bit 254
-
-        Logger.LogTrace("Clamped private key: {ClampedKeyHex}", BitConverter.ToString(privateKey));
-        Logger.LogTrace("Bit operations: byte[0] &= 248, byte[31] &= 127, byte[31] |= 64");
+        try
+        {
+            var keyCreationParams = new KeyCreationParameters
+            {
+                ExportPolicy = KeyExportPolicies.AllowPlaintextExport
+            };
+            
+            using var nsecPrivateKey = Key.Import(Algorithm, privateKey, KeyBlobFormat.RawPrivateKey, keyCreationParams);
+            return nsecPrivateKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "X25519 public key derivation failed");
+            throw new AgeKeyException("X25519 public key derivation failed", ex);
+        }
     }
 }
