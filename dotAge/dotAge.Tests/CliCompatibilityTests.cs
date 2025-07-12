@@ -2,6 +2,7 @@ using System.Text;
 using DotAge.Cli;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
+using DotAge.Core.Logging;
 
 namespace DotAge.Tests;
 
@@ -14,13 +15,16 @@ public class CliCompatibilityTests : IDisposable
     private readonly ILogger _logger;
     private readonly string _tempDir;
 
+    static CliCompatibilityTests()
+    {
+        // Initialize logging from core LoggerFactory
+        DotAge.Core.Logging.LoggerFactory.ForceTraceMode();
+    }
+
     public CliCompatibilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("dotage-cli-tests");
-
-        var loggerFactory = LoggerFactory.Create(builder =>
-            builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
-        _logger = loggerFactory.CreateLogger<CliCompatibilityTests>();
+        _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<CliCompatibilityTests>();
 
         // Validate that external binaries are available
         TestUtils.ValidateExternalBinaries(_logger);

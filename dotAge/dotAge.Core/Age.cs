@@ -147,7 +147,7 @@ public class Age
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Failed to unwrap file key with identity {IdentityType} and stanza type {StanzaType}", identity.GetType().Name, stanza.Type);
+                    _logger.LogTrace(ex, "Failed to unwrap file key with identity {IdentityType} and stanza type {StanzaType}", identity.GetType().Name, stanza.Type);
                 }
             }
             if (fileKey != null)

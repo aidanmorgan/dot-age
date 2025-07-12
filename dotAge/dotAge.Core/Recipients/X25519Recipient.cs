@@ -194,7 +194,7 @@ public class X25519Recipient : IRecipient
         }
         catch (Exception ex)
         {
-            Logger.LogDebug(ex, "Failed to unwrap X25519 key");
+            Logger.LogTrace(ex, "Failed to unwrap X25519 key");
             return null;
         }
     }

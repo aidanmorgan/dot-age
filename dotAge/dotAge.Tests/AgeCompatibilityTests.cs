@@ -6,6 +6,7 @@ using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
 using DotAge.KeyGen;
 using Microsoft.Extensions.Logging;
+using DotAge.Core.Logging;
 
 namespace DotAge.Tests;
 
@@ -22,13 +23,16 @@ public class AgeCompatibilityTests : IDisposable
     private readonly ILogger _logger;
     private readonly string _tempDir;
 
+    static AgeCompatibilityTests()
+    {
+        // Initialize logging from core LoggerFactory
+        DotAge.Core.Logging.LoggerFactory.ForceTraceMode();
+    }
+
     public AgeCompatibilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("dotage-age-tests");
-
-        var loggerFactory = LoggerFactory.Create(builder =>
-            builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
-        _logger = loggerFactory.CreateLogger<AgeCompatibilityTests>();
+        _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<AgeCompatibilityTests>();
     }
 
     public void Dispose()

@@ -9,6 +9,7 @@ namespace DotAge.Core.Logging;
 public static class LoggerFactory
 {
     private static ILoggerFactory? _loggerFactory;
+    private static bool _forceTraceMode = false;
 
     /// <summary>
     ///     Gets or sets the logger factory instance.
@@ -21,24 +22,46 @@ public static class LoggerFactory
                 return _loggerFactory;
 
 #if DEBUG
+            var minLevel = _forceTraceMode ? LogLevel.Trace : LogLevel.Information;
             _loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
             {
-                // Console logging - only Info and above
+                // Console logging - configurable minimum level
+                builder.AddConsole(options =>
+                {
+                    options.IncludeScopes = false;
+                })
+                .SetMinimumLevel(minLevel);
+
+                // File logging - all levels including Trace (only in debug builds)
+                builder.AddProvider(new FileLoggerProvider("dotage-stress.log"));
+            });
+#else
+            _loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
+            {
+                // Console logging - only Info and above in release builds
                 builder.AddConsole(options =>
                 {
                     options.IncludeScopes = false;
                 })
                 .SetMinimumLevel(LogLevel.Information);
-
-                // File logging - all levels including Trace
-                builder.AddProvider(new FileLoggerProvider("dotage-stress.log"));
+                
+                // No file logging in release builds
             });
-#else
-            _loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder => { });
 #endif
             return _loggerFactory;
         }
         set => _loggerFactory = value;
+    }
+
+    /// <summary>
+    ///     Forces trace mode for debug builds. Only effective in debug builds.
+    /// </summary>
+    public static void ForceTraceMode()
+    {
+#if DEBUG
+        _forceTraceMode = true;
+        _loggerFactory = null; // Force recreation with new settings
+#endif
     }
 
     /// <summary>
@@ -104,7 +127,14 @@ public class FileLogger : ILogger
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-    public bool IsEnabled(LogLevel logLevel) => true;
+    public bool IsEnabled(LogLevel logLevel)
+    {
+#if DEBUG
+        return true; // Allow all log levels in debug builds
+#else
+        return logLevel >= LogLevel.Information; // Only Info and above in release builds
+#endif
+    }
 
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {

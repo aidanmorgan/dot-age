@@ -162,7 +162,7 @@ public class Program
         var publicKeyAge = KeyFileUtils.EncodeAgePublicKey(publicKey);
 
         // Format the output in standard age format (matching age-keygen exactly)
-        return $"# created: {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}\n# public key: {publicKeyAge}\n{privateKeyAge}";
+        return $"# created: {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}\n# public key: {publicKeyAge}\n{privateKeyAge}\n";
     }
 
     /// <summary>

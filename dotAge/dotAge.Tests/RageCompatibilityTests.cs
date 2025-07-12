@@ -6,6 +6,7 @@ using DotAge.Core.Crypto;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
+using DotAge.Core.Logging;
 
 namespace DotAge.Tests;
 
@@ -20,11 +21,16 @@ public class RageCompatibilityTests : IDisposable
     private readonly ILogger _logger;
     private readonly string _tempDir;
 
+    static RageCompatibilityTests()
+    {
+        // Initialize logging from core LoggerFactory
+        DotAge.Core.Logging.LoggerFactory.ForceTraceMode();
+    }
+
     public RageCompatibilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("dotage-rage-tests");
-        var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
-        _logger = loggerFactory.CreateLogger<RageCompatibilityTests>();
+        _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<RageCompatibilityTests>();
     }
 
     public void Dispose()

@@ -6,6 +6,7 @@ using DotAge.Core;
 using DotAge.Core.Recipients;
 using DotAge.Core.Exceptions;
 using Microsoft.Extensions.Logging;
+using DotAge.Core.Logging;
 
 namespace DotAge.Tests;
 
@@ -15,11 +16,16 @@ public class PassphraseEncryptionTests : IDisposable
     private readonly string _tempDir;
     private readonly ILogger _logger;
 
+    static PassphraseEncryptionTests()
+    {
+        // Initialize logging from core LoggerFactory
+        DotAge.Core.Logging.LoggerFactory.ForceTraceMode();
+    }
+
     public PassphraseEncryptionTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("passphrase-tests");
-        var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
-        _logger = loggerFactory.CreateLogger<PassphraseEncryptionTests>();
+        _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<PassphraseEncryptionTests>();
     }
 
     public void Dispose()
