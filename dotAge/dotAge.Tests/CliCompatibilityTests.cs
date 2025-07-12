@@ -15,12 +15,6 @@ public class CliCompatibilityTests : IDisposable
     private readonly ILogger _logger;
     private readonly string _tempDir;
 
-    static CliCompatibilityTests()
-    {
-        // Initialize logging from core LoggerFactory
-        DotAge.Core.Logging.LoggerFactory.ForceTraceMode();
-    }
-
     public CliCompatibilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("dotage-cli-tests");

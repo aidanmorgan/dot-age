@@ -24,7 +24,6 @@ public class RageCompatibilityTests : IDisposable
     static RageCompatibilityTests()
     {
         // Initialize logging from core LoggerFactory
-        DotAge.Core.Logging.LoggerFactory.ForceTraceMode();
     }
 
     public RageCompatibilityTests()
@@ -235,7 +234,7 @@ public class RageCompatibilityTests : IDisposable
         var dotageDecryptedFile = Path.Combine(_tempDir, "test8_dotage_decrypted.txt");
         var (privateKey1Bytes, publicKey1Bytes) = KeyFileUtils.ParseKeyFileAsBytes(key1File);
         var age = new Age();
-        age.AddIdentity(new X25519Recipient(publicKey1Bytes, privateKey1Bytes));
+        age.AddIdentity(new X25519Recipient(privateKey1Bytes, publicKey1Bytes));
         age.DecryptFile(rageEncryptedFile, dotageDecryptedFile);
         var decryptedData = File.ReadAllBytes(dotageDecryptedFile);
         Assert.Equal(testData, decryptedData);

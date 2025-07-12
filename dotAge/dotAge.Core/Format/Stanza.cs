@@ -11,7 +11,7 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Stanza
 {
-    private static readonly ILogger<Stanza> _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<Stanza>();
+    private static readonly Lazy<ILogger<Stanza>> _logger = new Lazy<ILogger<Stanza>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<Stanza>());
 
     /// <summary>
     ///     Creates a new stanza with the specified type, arguments, and body.
@@ -51,20 +51,20 @@ public class Stanza
         if (string.IsNullOrEmpty(type))
             throw new AgeFormatException("Stanza type cannot be null or empty");
 
-        _logger.LogTrace("=== STANZA PARSE START ===");
-        _logger.LogTrace("Stanza type: '{Type}'", type);
+        _logger.Value.LogTrace("=== STANZA PARSE START ===");
+        _logger.Value.LogTrace("Stanza type: '{Type}'", type);
 
         if (rawTextLines == null)
         {
-            _logger.LogTrace("Raw text lines is null, returning empty stanza");
+            _logger.Value.LogTrace("Raw text lines is null, returning empty stanza");
             return new Stanza(type);
         }
 
         var linesList = rawTextLines.ToList();
-        _logger.LogTrace("Raw text lines count: {LineCount}", linesList.Count);
+        _logger.Value.LogTrace("Raw text lines count: {LineCount}", linesList.Count);
         for (int idx = 0; idx < linesList.Count; idx++)
         {
-            _logger.LogTrace("Raw line {Index}: '{Line}'", idx, linesList[idx]);
+            _logger.Value.LogTrace("Raw line {Index}: '{Line}'", idx, linesList[idx]);
         }
 
         var arguments = new List<string>();
@@ -74,49 +74,49 @@ public class Stanza
         if (linesList.Count > 0)
         {
             var firstLine = linesList[0];
-            _logger.LogTrace("First line: '{FirstLine}'", firstLine);
+            _logger.Value.LogTrace("First line: '{FirstLine}'", firstLine);
 
             // Check if the first line is the type (which would be the case if this is a stanza header line)
             if (firstLine.StartsWith(type))
             {
-                _logger.LogTrace("First line starts with type '{Type}'", type);
+                _logger.Value.LogTrace("First line starts with type '{Type}'", type);
                 // Extract arguments from the first line after the type
                 var argsString = firstLine.Substring(type.Length).Trim();
                 var args = argsString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 arguments.AddRange(args);
-                _logger.LogTrace("Extracted arguments from type-prefixed line: {Arguments}", string.Join(", ", args));
+                _logger.Value.LogTrace("Extracted arguments from type-prefixed line: {Arguments}", string.Join(", ", args));
             }
             else
             {
-                _logger.LogTrace("First line does not start with type '{Type}'", type);
+                _logger.Value.LogTrace("First line does not start with type '{Type}'", type);
                 // If the first line doesn't start with the type, it contains the arguments
                 var args = firstLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 arguments.AddRange(args);
-                _logger.LogTrace("Extracted arguments from standalone line: {Arguments}", string.Join(", ", args));
+                _logger.Value.LogTrace("Extracted arguments from standalone line: {Arguments}", string.Join(", ", args));
             }
 
             // The rest of the lines are the body
             if (linesList.Count > 1) 
             {
                 bodyLines.AddRange(linesList.Skip(1));
-                _logger.LogTrace("Body lines count: {BodyLineCount}", bodyLines.Count);
+                _logger.Value.LogTrace("Body lines count: {BodyLineCount}", bodyLines.Count);
                 for (int idx = 0; idx < bodyLines.Count; idx++)
                 {
-                    _logger.LogTrace("Body line {Index}: '{Line}'", idx, bodyLines[idx]);
+                    _logger.Value.LogTrace("Body line {Index}: '{Line}'", idx, bodyLines[idx]);
                 }
             }
             else
             {
-                _logger.LogTrace("No body lines (only first line present)");
+                _logger.Value.LogTrace("No body lines (only first line present)");
             }
         }
 
         // Decode the base64 body lines
-        _logger.LogTrace("Calling DecodeBase64Lines with {BodyLineCount} lines", bodyLines.Count);
+        _logger.Value.LogTrace("Calling DecodeBase64Lines with {BodyLineCount} lines", bodyLines.Count);
         var bodyBytes = DecodeBase64Lines(bodyLines);
-        _logger.LogTrace("Decoded body bytes: {BodyBytesLength} bytes", bodyBytes.Length);
+        _logger.Value.LogTrace("Decoded body bytes: {BodyBytesLength} bytes", bodyBytes.Length);
 
-        _logger.LogTrace("=== STANZA PARSE END ===");
+        _logger.Value.LogTrace("=== STANZA PARSE END ===");
         return new Stanza(type, arguments, bodyBytes);
     }
 
@@ -147,7 +147,7 @@ public class Stanza
         if (Body.Length > 0)
         {
             var base64 = Base64Utils.EncodeToString(Body);
-            _logger.LogTrace("Body base64 length: {BodyBase64Length} characters", base64.Length);
+            _logger.Value.LogTrace("Body base64 length: {BodyBase64Length} characters", base64.Length);
 
             // Wrap base64 at 64 columns as required by age specification
             var wrappedBase64 = Base64Utils.WrapBase64(base64, 64);
@@ -173,23 +173,23 @@ public class Stanza
             if (string.IsNullOrEmpty(trimmedLine))
                 continue;
 
-            _logger.LogTrace("Decoding base64 line: {Line}", trimmedLine);
+            _logger.Value.LogTrace("Decoding base64 line: {Line}", trimmedLine);
 
             try
             {
                 var lineBytes = Base64Utils.DecodeString(trimmedLine);
                 bodyBytes.AddRange(lineBytes);
-                _logger.LogTrace("Decoded {LineByteCount} bytes from line", lineBytes.Length);
+                _logger.Value.LogTrace("Decoded {LineByteCount} bytes from line", lineBytes.Length);
             }
             catch (FormatException ex)
             {
-                _logger.LogTrace("Invalid base64 in stanza body: {Line} - {Error}", trimmedLine, ex.Message);
+                _logger.Value.LogTrace("Invalid base64 in stanza body: {Line} - {Error}", trimmedLine, ex.Message);
                 throw new AgeFormatException($"Invalid base64 in stanza body: {trimmedLine} - {ex.Message}", ex);
             }
         }
 
         var result = bodyBytes.ToArray();
-        _logger.LogTrace("Total decoded body bytes: {TotalBytes}", result.Length);
+        _logger.Value.LogTrace("Total decoded body bytes: {TotalBytes}", result.Length);
         return result;
     }
 }

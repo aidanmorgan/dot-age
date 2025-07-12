@@ -26,7 +26,6 @@ public class AgeCompatibilityTests : IDisposable
     static AgeCompatibilityTests()
     {
         // Initialize logging from core LoggerFactory
-        DotAge.Core.Logging.LoggerFactory.ForceTraceMode();
     }
 
     public AgeCompatibilityTests()

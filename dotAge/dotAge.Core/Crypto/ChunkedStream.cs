@@ -14,7 +14,7 @@ namespace DotAge.Core.Crypto;
 /// </summary>
 public static class ChunkedStream
 {
-    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ChunkedStream));
+    private static readonly Lazy<ILogger> Logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ChunkedStream)));
 
     public const int ChunkSize = 65536; // 64KB chunks
 

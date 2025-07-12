@@ -10,7 +10,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class RandomUtils
 {
-    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(RandomUtils));
+    private static readonly Lazy<ILogger> Logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(RandomUtils)));
 
     /// <summary>
     ///     Generates cryptographically secure random bytes.

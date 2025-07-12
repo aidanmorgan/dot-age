@@ -14,7 +14,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class Bech32
 {
-    private static readonly ILogger _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Bech32));
+    private static readonly Lazy<ILogger> _logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Bech32)));
 
     private static readonly string Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
     private static readonly uint[] Generator = { 0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3 };
@@ -30,7 +30,7 @@ public static class Bech32
         if (data == null) throw new ArgumentNullException(nameof(data));
         if (string.IsNullOrEmpty(hrp)) throw new AgeFormatException("HRP cannot be null or empty");
 
-        _logger.LogTrace("Encoding Bech32 - HRP: {Hrp}, Data length: {DataLength}", hrp, data.Length);
+        _logger.Value.LogTrace("Encoding Bech32 - HRP: {Hrp}, Data length: {DataLength}", hrp, data.Length);
 
         // Convert 8-bit data to 5-bit
         var values = ConvertBits(data, 8, 5, true);
@@ -58,7 +58,7 @@ public static class Bech32
 
         // Add checksum
         var checksum = CreateChecksum(lowerHrp, values);
-        _logger.LogTrace("Generated checksum: {ChecksumHex}", BitConverter.ToString(checksum));
+        _logger.Value.LogTrace("Generated checksum: {ChecksumHex}", BitConverter.ToString(checksum));
 
         foreach (var p in checksum)
         {
@@ -84,19 +84,19 @@ public static class Bech32
         var originalString = s;
         if (s.ToLowerInvariant() != s && s.ToUpperInvariant() != s)
         {
-            _logger.LogTrace("Mixed case detected in Bech32 string, normalizing to lowercase for processing");
+            _logger.Value.LogTrace("Mixed case detected in Bech32 string, normalizing to lowercase for processing");
             s = s.ToLowerInvariant();
         }
 
         var pos = s.LastIndexOf('1');
         if (pos < 1 || pos + 7 > s.Length)
         {
-            _logger.LogTrace("Separator '1' at invalid position: {Position}", pos);
+            _logger.Value.LogTrace("Separator '1' at invalid position: {Position}", pos);
             throw new AgeFormatException("Separator '1' at invalid position");
         }
 
         var hrp = s.Substring(0, pos);
-        _logger.LogTrace("Extracted HRP: {Hrp}", hrp);
+        _logger.Value.LogTrace("Extracted HRP: {Hrp}", hrp);
 
         // Validate HRP characters
         foreach (var c in hrp)
@@ -114,7 +114,7 @@ public static class Bech32
             var d = Charset.IndexOf(lowerS[i]);
             if (d == -1)
             {
-                _logger.LogTrace("Invalid character in data part: {Char}", lowerS[i]);
+                _logger.Value.LogTrace("Invalid character in data part: {Char}", lowerS[i]);
                 throw new AgeFormatException($"Invalid character in data part: {lowerS[i]}");
             }
             data.Add((byte)d);
@@ -123,7 +123,7 @@ public static class Bech32
         // Verify checksum
         if (!VerifyChecksum(hrp, data.ToArray()))
         {
-            _logger.LogTrace("Invalid checksum in Bech32 string");
+            _logger.Value.LogTrace("Invalid checksum in Bech32 string");
             throw new AgeFormatException("Invalid checksum");
         }
 
@@ -131,7 +131,7 @@ public static class Bech32
         var result = ConvertBits(data.ToArray(), 5, 8, false, data.Count - 6);
         if (result == null)
         {
-            _logger.LogTrace("Invalid data conversion from 5-bit to 8-bit");
+            _logger.Value.LogTrace("Invalid data conversion from 5-bit to 8-bit");
             throw new AgeFormatException("Invalid data conversion");
         }
 
@@ -140,7 +140,7 @@ public static class Bech32
 
     private static uint Polymod(byte[] values)
     {
-        _logger.LogTrace("Computing polymod for {ValueCount}", values.Length);
+        _logger.Value.LogTrace("Computing polymod for {ValueCount}", values.Length);
 
         var chk = 1u;
         foreach (var v in values)
@@ -158,13 +158,13 @@ public static class Bech32
             }
         }
 
-        _logger.LogTrace("Polymod result: {PolymodResult:X8}", chk);
+        _logger.Value.LogTrace("Polymod result: {PolymodResult:X8}", chk);
         return chk;
     }
 
     private static byte[] HrpExpand(string hrp)
     {
-        _logger.LogTrace("Expanding HRP: {Hrp}", hrp);
+        _logger.Value.LogTrace("Expanding HRP: {Hrp}", hrp);
 
         var h = hrp.ToLowerInvariant();
         var ret = new List<byte>();
@@ -180,13 +180,13 @@ public static class Bech32
             ret.Add((byte)(c & 31));
         }
 
-        _logger.LogTrace("Expanded HRP: {ExpandedHrpHex}", BitConverter.ToString(ret.ToArray()));
+        _logger.Value.LogTrace("Expanded HRP: {ExpandedHrpHex}", BitConverter.ToString(ret.ToArray()));
         return ret.ToArray();
     }
 
     private static bool VerifyChecksum(string hrp, byte[] data)
     {
-        _logger.LogTrace("Verifying checksum - HRP: {Hrp}, Data: {DataHex}", hrp, BitConverter.ToString(data));
+        _logger.Value.LogTrace("Verifying checksum - HRP: {Hrp}, Data: {DataHex}", hrp, BitConverter.ToString(data));
 
         var values = new List<byte>();
         values.AddRange(HrpExpand(hrp));
@@ -195,7 +195,7 @@ public static class Bech32
         var polymod = Polymod(values.ToArray());
         var isValid = polymod == 1;
 
-        _logger.LogTrace("Checksum verification result: {IsValid} (polymod: {Polymod:X8})", isValid, polymod);
+        _logger.Value.LogTrace("Checksum verification result: {IsValid} (polymod: {Polymod:X8})", isValid, polymod);
         return isValid;
     }
 
@@ -215,7 +215,7 @@ public static class Bech32
             ret[p] = (byte)((mod >> shift) & 31);
         }
 
-        _logger.LogTrace("Created checksum: {ChecksumHex}", BitConverter.ToString(ret));
+        _logger.Value.LogTrace("Created checksum: {ChecksumHex}", BitConverter.ToString(ret));
         return ret;
     }
 

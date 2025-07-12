@@ -16,7 +16,7 @@ namespace DotAge.Core.Recipients;
 /// </summary>
 public class X25519Recipient : IRecipient
 {
-    private static readonly ILogger<X25519Recipient> Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<X25519Recipient>();
+    private static readonly Lazy<ILogger<X25519Recipient>> Logger = new Lazy<ILogger<X25519Recipient>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<X25519Recipient>());
 
     public string Type => "X25519";
 
@@ -64,30 +64,30 @@ public class X25519Recipient : IRecipient
 
         // Generate ephemeral key pair
         var (ephemeralPrivateKey, ephemeralPublicKey) = X25519.GenerateKeyPair();
-        Logger.LogTrace("Ephemeral private key: {EphemeralPrivateKey}", BitConverter.ToString(ephemeralPrivateKey));
-        Logger.LogTrace("Ephemeral public key: {EphemeralPublicKey}", BitConverter.ToString(ephemeralPublicKey));
-        Logger.LogTrace("Recipient public key: {RecipientPublicKey}", BitConverter.ToString(_publicKey));
+        Logger.Value.LogTrace("Ephemeral private key: {EphemeralPrivateKey}", BitConverter.ToString(ephemeralPrivateKey));
+        Logger.Value.LogTrace("Ephemeral public key: {EphemeralPublicKey}", BitConverter.ToString(ephemeralPublicKey));
+        Logger.Value.LogTrace("Recipient public key: {RecipientPublicKey}", BitConverter.ToString(_publicKey));
 
         // Perform key agreement
         var sharedSecret = X25519.KeyAgreement(ephemeralPrivateKey, _publicKey);
-        Logger.LogTrace("Shared secret: {SharedSecret}", BitConverter.ToString(sharedSecret));
+        Logger.Value.LogTrace("Shared secret: {SharedSecret}", BitConverter.ToString(sharedSecret));
 
         // Create salt by combining ephemeral public key and recipient public key
         var salt = new byte[ephemeralPublicKey.Length + _publicKey.Length];
         Buffer.BlockCopy(ephemeralPublicKey, 0, salt, 0, ephemeralPublicKey.Length);
         Buffer.BlockCopy(_publicKey, 0, salt, ephemeralPublicKey.Length, _publicKey.Length);
-        Logger.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
+        Logger.Value.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
 
         // Derive wrapping key
         var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, "age-encryption.org/v1/X25519", 32);
-        Logger.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
+        Logger.Value.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
 
         // Encrypt file key
         var nonce = new byte[12]; // All zeros
-        Logger.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
-        Logger.LogTrace("File key (plaintext): {FileKey}", BitConverter.ToString(fileKey));
+        Logger.Value.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
+        Logger.Value.LogTrace("File key (plaintext): {FileKey}", BitConverter.ToString(fileKey));
         var wrappedKey = ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
-        Logger.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(wrappedKey));
+        Logger.Value.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(wrappedKey));
 
         // Create stanza
         var arguments = new List<string> { Base64Utils.EncodeToString(ephemeralPublicKey) };
@@ -130,21 +130,21 @@ public class X25519Recipient : IRecipient
         }
 
         Console.WriteLine("[DEBUG] Stanza type matches, proceeding with decryption");
-        Logger.LogTrace("UnwrapKey called with stanza type: '{StanzaType}', arguments: [{Arguments}]", stanza.Type, string.Join(", ", stanza.Arguments));
+        Logger.Value.LogTrace("UnwrapKey called with stanza type: '{StanzaType}', arguments: [{Arguments}]", stanza.Type, string.Join(", ", stanza.Arguments));
 
         try
         {
             // Decode ephemeral public key - standard age format uses base64 encoding
             byte[] ephemeralPublicKey;
             var keyArg = stanza.Arguments[0];
-            Logger.LogTrace("Ephemeral public key (base64 string): '{KeyArg}' (length: {Length})", keyArg, keyArg.Length);
+            Logger.Value.LogTrace("Ephemeral public key (base64 string): '{KeyArg}' (length: {Length})", keyArg, keyArg.Length);
             try
             {
                 ephemeralPublicKey = Base64Utils.DecodeString(keyArg);
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Base64 decode failed for ephemeral public key: '{KeyArg}'", keyArg);
+                Logger.Value.LogError(ex, "Base64 decode failed for ephemeral public key: '{KeyArg}'", keyArg);
                 // If base64 fails, try standard base64
                 try
                 {
@@ -152,40 +152,40 @@ public class X25519Recipient : IRecipient
                 }
                 catch (Exception ex2)
                 {
-                    Logger.LogError(ex2, "Standard base64 decode also failed for ephemeral public key: '{KeyArg}'", keyArg);
+                    Logger.Value.LogError(ex2, "Standard base64 decode also failed for ephemeral public key: '{KeyArg}'", keyArg);
                     return null;
                 }
             }
-            Logger.LogTrace("Ephemeral public key (decoded bytes): {EphemeralPublicKey} (length: {Length})", BitConverter.ToString(ephemeralPublicKey), ephemeralPublicKey.Length);
-            Logger.LogTrace("Own private key: {OwnPrivateKey}", BitConverter.ToString(_privateKey));
-            Logger.LogTrace("Own public key: {OwnPublicKey}", BitConverter.ToString(_publicKey));
+            Logger.Value.LogTrace("Ephemeral public key (decoded bytes): {EphemeralPublicKey} (length: {Length})", BitConverter.ToString(ephemeralPublicKey), ephemeralPublicKey.Length);
+            Logger.Value.LogTrace("Own private key: {OwnPrivateKey}", BitConverter.ToString(_privateKey));
+            Logger.Value.LogTrace("Own public key: {OwnPublicKey}", BitConverter.ToString(_publicKey));
 
             if (ephemeralPublicKey.Length != X25519.KeySize)
             {
-                Logger.LogError("Ephemeral public key decoded to {Length} bytes, expected {ExpectedLength}. Bytes: {Bytes}", ephemeralPublicKey.Length, X25519.KeySize, BitConverter.ToString(ephemeralPublicKey));
+                Logger.Value.LogError("Ephemeral public key decoded to {Length} bytes, expected {ExpectedLength}. Bytes: {Bytes}", ephemeralPublicKey.Length, X25519.KeySize, BitConverter.ToString(ephemeralPublicKey));
                 return null;
             }
 
             // Perform key agreement
             var sharedSecret = X25519.KeyAgreement(_privateKey, ephemeralPublicKey);
-            Logger.LogTrace("Shared secret: {SharedSecret}", BitConverter.ToString(sharedSecret));
+            Logger.Value.LogTrace("Shared secret: {SharedSecret}", BitConverter.ToString(sharedSecret));
 
             // Create salt
             var salt = new byte[ephemeralPublicKey.Length + _publicKey.Length];
             Buffer.BlockCopy(ephemeralPublicKey, 0, salt, 0, ephemeralPublicKey.Length);
             Buffer.BlockCopy(_publicKey, 0, salt, ephemeralPublicKey.Length, _publicKey.Length);
-            Logger.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
+            Logger.Value.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
 
             // Derive wrapping key
             var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, "age-encryption.org/v1/X25519", 32);
-            Logger.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
+            Logger.Value.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
 
             // Decrypt file key
             var nonce = new byte[12]; // All zeros
-            Logger.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
-            Logger.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(stanza.Body));
+            Logger.Value.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
+            Logger.Value.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(stanza.Body));
             var unwrappedKey = ChaCha20Poly1305.Decrypt(wrappingKey, nonce, stanza.Body);
-            Logger.LogTrace("Unwrapped file key (plaintext): {UnwrappedKey}", BitConverter.ToString(unwrappedKey));
+            Logger.Value.LogTrace("Unwrapped file key (plaintext): {UnwrappedKey}", BitConverter.ToString(unwrappedKey));
 
             if (unwrappedKey.Length != 16)
                 return null;
@@ -194,7 +194,7 @@ public class X25519Recipient : IRecipient
         }
         catch (Exception ex)
         {
-            Logger.LogTrace(ex, "Failed to unwrap X25519 key");
+            Logger.Value.LogTrace(ex, "Failed to unwrap X25519 key");
             return null;
         }
     }

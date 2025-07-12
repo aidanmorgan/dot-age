@@ -16,7 +16,7 @@ namespace DotAge.Core.Crypto;
 /// </summary>
 public static class Scrypt
 {
-    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Scrypt));
+    private static readonly Lazy<ILogger> Logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Scrypt)));
 
     public const int DefaultLogN = 18;
     public const int DefaultR = 8;
@@ -52,7 +52,7 @@ public static class Scrypt
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Scrypt key derivation failed");
+            Logger.Value.LogError(ex, "Scrypt key derivation failed");
             throw new AgeCryptoException("Scrypt key derivation failed", ex);
         }
     }

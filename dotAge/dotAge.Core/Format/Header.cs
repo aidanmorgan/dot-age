@@ -12,7 +12,7 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Header
 {
-    private static readonly ILogger<Header> _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<Header>();
+    private static readonly Lazy<ILogger<Header>> _logger = new Lazy<ILogger<Header>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<Header>());
 
     // The age file format version
     public const string Version = "age-encryption.org/v1";
@@ -49,17 +49,17 @@ public class Header
         {
             var stanzaEncoded = stanza.Encode();
             sb.Append(stanzaEncoded);
-            _logger.LogTrace("Added stanza of type {StanzaType}: {StanzaEncoded}", stanza.Type, stanzaEncoded);
-            _logger.LogTrace("Stanza encoded string: {StanzaEncoded}", stanzaEncoded);
+            _logger.Value.LogTrace("Added stanza of type {StanzaType}: {StanzaEncoded}", stanza.Type, stanzaEncoded);
+            _logger.Value.LogTrace("Stanza encoded string: {StanzaEncoded}", stanzaEncoded);
         }
 
         // Add the MAC prefix (without the MAC value) - no newline as per age spec
         sb.Append("---");
-        _logger.LogTrace("Added MAC prefix: ---");
+        _logger.Value.LogTrace("Added MAC prefix: ---");
 
         var result = sb.ToString();
-        _logger.LogTrace("Header encoded without MAC: {HeaderLength} characters", result.Length);
-        _logger.LogTrace("Header content: {HeaderContent}", result);
+        _logger.Value.LogTrace("Header encoded without MAC: {HeaderLength} characters", result.Length);
+        _logger.Value.LogTrace("Header content: {HeaderContent}", result);
         return result;
     }
 
@@ -80,8 +80,8 @@ public class Header
         {
             var stanzaEncoded = stanza.Encode();
             sb.Append(stanzaEncoded);
-            _logger.LogTrace("Added stanza of type {StanzaType}: {StanzaEncoded}", stanza.Type, stanzaEncoded);
-            _logger.LogTrace("Stanza encoded string: {StanzaEncoded}", stanzaEncoded);
+            _logger.Value.LogTrace("Added stanza of type {StanzaType}: {StanzaEncoded}", stanza.Type, stanzaEncoded);
+            _logger.Value.LogTrace("Stanza encoded string: {StanzaEncoded}", stanzaEncoded);
         }
 
         // Add the MAC line if available
@@ -92,23 +92,61 @@ public class Header
                 throw new AgeFormatException(
                     $"MAC must be 32 bytes (got {Mac.Length}) for age/rage compatibility");
             
-            _logger.LogTrace("MAC value length: {MacLength} bytes", Mac.Length);
+            _logger.Value.LogTrace("MAC value length: {MacLength} bytes", Mac.Length);
             
             // Use canonical unpadded base64
             var macBase64 = Base64Utils.EncodeToString(Mac);
             sb.Append($"--- {macBase64}\n");
-            _logger.LogTrace("Added MAC line with length: {MacBase64Length} characters", macBase64.Length);
+            _logger.Value.LogTrace("Added MAC line with length: {MacBase64Length} characters", macBase64.Length);
         }
         else
         {
             // No newline after --- as per age spec (matches Go implementation)
             sb.Append("---");
-            _logger.LogTrace("Added empty MAC line: ---");
+            _logger.Value.LogTrace("Added empty MAC line: ---");
         }
 
         var result = sb.ToString();
-        _logger.LogTrace("Header encoded with MAC: {HeaderLength} characters", result.Length);
-        _logger.LogTrace("Header content: {HeaderContent}", result);
+        _logger.Value.LogTrace("Header encoded with MAC: {HeaderLength} characters", result.Length);
+        _logger.Value.LogTrace("Header content: {HeaderContent}", result);
+        return result;
+    }
+
+    /// <summary>
+    ///     Encodes the header as a string without the MAC line and without grease stanzas.
+    ///     This is used for MAC calculation to ensure compatibility with rage-generated files.
+    /// </summary>
+    /// <returns>The encoded header as a string without MAC and grease stanzas.</returns>
+    public string EncodeWithoutMacAndGrease()
+    {
+        var sb = new StringBuilder();
+
+        // Add the version line
+        sb.Append(Version);
+        sb.Append("\n");
+
+        // Add the recipient stanzas (excluding grease stanzas)
+        foreach (var stanza in Stanzas) 
+        {
+            // Skip grease stanzas for MAC calculation
+            if (stanza.Type.EndsWith("-grease", StringComparison.Ordinal))
+            {
+                _logger.Value.LogTrace("Skipping grease stanza of type {StanzaType} for MAC calculation", stanza.Type);
+                continue;
+            }
+            
+            var stanzaEncoded = stanza.Encode();
+            sb.Append(stanzaEncoded);
+            _logger.Value.LogTrace("Added stanza of type {StanzaType} for MAC calculation: {StanzaEncoded}", stanza.Type, stanzaEncoded);
+        }
+
+        // Add the MAC prefix (without the MAC value) - no newline as per age spec
+        sb.Append("---");
+        _logger.Value.LogTrace("Added MAC prefix for MAC calculation: ---");
+
+        var result = sb.ToString();
+        _logger.Value.LogTrace("Header encoded without MAC and grease: {HeaderLength} characters", result.Length);
+        _logger.Value.LogTrace("Header content for MAC calculation: {HeaderContent}", result);
         return result;
     }
 
@@ -121,24 +159,24 @@ public class Header
         if (fileKey == null || fileKey.Length != 16)
             throw new AgeKeyException("File key must be 16 bytes");
 
-        _logger.LogTrace("Calculating header MAC");
-        _logger.LogTrace("File key length: {FileKeyLength} bytes", fileKey.Length);
-        _logger.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
+        _logger.Value.LogTrace("Calculating header MAC");
+        _logger.Value.LogTrace("File key length: {FileKeyLength} bytes", fileKey.Length);
+        _logger.Value.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
 
         // Derive the MAC key using HKDF
         var macKey = Hkdf.DeriveKey(fileKey, new byte[0], "header", 32);
-        _logger.LogTrace("Derived MAC key length: {MacKeyLength} bytes", macKey.Length);
-        _logger.LogTrace("MAC key: {MacKey}", BitConverter.ToString(macKey));
+        _logger.Value.LogTrace("Derived MAC key length: {MacKeyLength} bytes", macKey.Length);
+        _logger.Value.LogTrace("MAC key: {MacKey}", BitConverter.ToString(macKey));
 
-        // Calculate HMAC-SHA-256 over the header up to and including "---"
-        var headerWithoutMac = EncodeWithoutMac();
-        var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMac);
-        _logger.LogTrace("Header bytes for MAC calculation: {HeaderBytesLength} bytes", headerBytes.Length);
+        // Calculate HMAC-SHA-256 over the header up to and including "---" (excluding grease stanzas)
+        var headerWithoutMacAndGrease = EncodeWithoutMacAndGrease();
+        var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMacAndGrease);
+        _logger.Value.LogTrace("Header bytes for MAC calculation (excluding grease): {HeaderBytesLength} bytes", headerBytes.Length);
 
         using var hmac = new HMACSHA256(macKey);
         Mac = hmac.ComputeHash(headerBytes);
-        _logger.LogTrace("Calculated MAC length: {MacLength} bytes", Mac.Length);
-        _logger.LogTrace("MAC: {Mac}", BitConverter.ToString(Mac));
+        _logger.Value.LogTrace("Calculated MAC length: {MacLength} bytes", Mac.Length);
+        _logger.Value.LogTrace("MAC: {Mac}", BitConverter.ToString(Mac));
     }
 
     /// <summary>
@@ -151,24 +189,24 @@ public class Header
         if (fileKey == null || fileKey.Length != 16)
             throw new AgeKeyException("File key must be 16 bytes");
 
-        _logger.LogTrace("Calculating header MAC and returning");
-        _logger.LogTrace("File key length: {FileKeyLength} bytes", fileKey.Length);
-        _logger.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
+        _logger.Value.LogTrace("Calculating header MAC and returning");
+        _logger.Value.LogTrace("File key length: {FileKeyLength} bytes", fileKey.Length);
+        _logger.Value.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
 
         // Derive the MAC key using HKDF
         var macKey = Hkdf.DeriveKey(fileKey, new byte[0], "header", 32);
-        _logger.LogTrace("Derived MAC key length: {MacKeyLength} bytes", macKey.Length);
-        _logger.LogTrace("MAC key: {MacKey}", BitConverter.ToString(macKey));
+        _logger.Value.LogTrace("Derived MAC key length: {MacKeyLength} bytes", macKey.Length);
+        _logger.Value.LogTrace("MAC key: {MacKey}", BitConverter.ToString(macKey));
 
-        // Calculate HMAC-SHA-256 over the header up to and including "---"
-        var headerWithoutMac = EncodeWithoutMac();
-        var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMac);
-        _logger.LogTrace("Header bytes for MAC calculation: {HeaderBytesLength} bytes", headerBytes.Length);
+        // Calculate HMAC-SHA-256 over the header up to and including "---" (excluding grease stanzas)
+        var headerWithoutMacAndGrease = EncodeWithoutMacAndGrease();
+        var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMacAndGrease);
+        _logger.Value.LogTrace("Header bytes for MAC calculation (excluding grease): {HeaderBytesLength} bytes", headerBytes.Length);
 
         using var hmac = new HMACSHA256(macKey);
         var mac = hmac.ComputeHash(headerBytes);
-        _logger.LogTrace("Calculated MAC length: {MacLength} bytes", mac.Length);
-        _logger.LogTrace("MAC: {Mac}", BitConverter.ToString(mac));
+        _logger.Value.LogTrace("Calculated MAC length: {MacLength} bytes", mac.Length);
+        _logger.Value.LogTrace("MAC: {Mac}", BitConverter.ToString(mac));
         return mac;
     }
 
@@ -224,6 +262,19 @@ public class Header
                 var parts = stanzaContent.Split(' ', 2);
                 var stanzaType = parts[0];
                 var stanzaArgs = parts.Length > 1 ? parts[1] : string.Empty;
+
+                // Skip grease stanzas (added by rage for robustness)
+                if (stanzaType.EndsWith("-grease", StringComparison.Ordinal))
+                {
+                    _logger.Value.LogTrace("Skipping grease stanza of type: {StanzaType}", stanzaType);
+                    
+                    // Skip the body lines of this grease stanza
+                    while (i + 1 < lines.Length && !lines[i + 1].StartsWith("->") && !lines[i + 1].StartsWith("---"))
+                    {
+                        i++;
+                    }
+                    continue;
+                }
 
                 // Read the body lines until the next stanza or MAC line
                 var bodyLines = new List<string>();

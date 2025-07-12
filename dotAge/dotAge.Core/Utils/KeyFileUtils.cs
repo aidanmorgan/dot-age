@@ -10,7 +10,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class KeyFileUtils
 {
-    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(KeyFileUtils));
+    private static readonly Lazy<ILogger> Logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(KeyFileUtils)));
 
     private static readonly Regex AgeSecretKeyRegex =
         new(@"^AGE-SECRET-KEY-1[A-Z0-9]+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -31,7 +31,7 @@ public static class KeyFileUtils
         if (!File.Exists(keyFilePath))
             throw new AgeKeyException($"Key file not found: {keyFilePath}");
 
-        Logger.LogTrace("Parsing key file: {KeyFilePath}", keyFilePath);
+        Logger.Value.LogTrace("Parsing key file: {KeyFilePath}", keyFilePath);
 
         var keyFileContent = File.ReadAllText(keyFilePath);
         var lines = keyFileContent.Split('\n');
@@ -52,7 +52,7 @@ public static class KeyFileUtils
                 if (AgePublicKeyRegex.IsMatch(publicKey)) 
                 {
                     publicKeyLine = publicKey;
-                    Logger.LogTrace("Found public key in comment: {PublicKey}", publicKey);
+                    Logger.Value.LogTrace("Found public key in comment: {PublicKey}", publicKey);
                 }
             }
 
@@ -67,11 +67,11 @@ public static class KeyFileUtils
             {
                 if (privateKeyLine != null)
                 {
-                    Logger.LogTrace("Multiple private keys found in key file");
+                    Logger.Value.LogTrace("Multiple private keys found in key file");
                     throw new AgeKeyException("Multiple private keys found in key file");
                 }
                 privateKeyLine = trimmedLine;
-                Logger.LogTrace("Found private key: {PrivateKey}", privateKeyLine);
+                Logger.Value.LogTrace("Found private key: {PrivateKey}", privateKeyLine);
             }
             // Check for public key (age1... format) - standalone line
             else if (trimmedLine.StartsWith("age1"))
@@ -80,33 +80,33 @@ public static class KeyFileUtils
                 {
                     if (publicKeyLine != null)
                     {
-                        Logger.LogTrace("Multiple public keys found in key file");
+                        Logger.Value.LogTrace("Multiple public keys found in key file");
                         throw new AgeKeyException("Multiple public keys found in key file");
                     }
                     publicKeyLine = trimmedLine;
-                    Logger.LogTrace("Found public key: {PublicKey}", publicKeyLine);
+                    Logger.Value.LogTrace("Found public key: {PublicKey}", publicKeyLine);
                 }
             }
             else
             {
-                Logger.LogTrace("Invalid key format on line {LineNumber}: {Line}", i + 1, trimmedLine);
+                Logger.Value.LogTrace("Invalid key format on line {LineNumber}: {Line}", i + 1, trimmedLine);
                 throw new AgeKeyException($"Invalid key format on line {i + 1}");
             }
         }
 
         if (privateKeyLine == null)
         {
-            Logger.LogTrace("Private key not found in the key file");
+            Logger.Value.LogTrace("Private key not found in the key file");
             throw new AgeKeyException("Private key not found in the key file.");
         }
 
         if (publicKeyLine == null)
         {
-            Logger.LogTrace("Public key not found in the key file");
+            Logger.Value.LogTrace("Public key not found in the key file");
             throw new AgeKeyException("Public key not found in the key file.");
         }
 
-        Logger.LogTrace("Successfully parsed key file - Private: {PrivateKey}, Public: {PublicKey}", 
+        Logger.Value.LogTrace("Successfully parsed key file - Private: {PrivateKey}, Public: {PublicKey}", 
             privateKeyLine, publicKeyLine);
 
         return (privateKeyLine, publicKeyLine);
@@ -119,7 +119,7 @@ public static class KeyFileUtils
     /// <returns>A tuple containing the private key and public key as byte arrays.</returns>
     public static (byte[] privateKey, byte[] publicKey) ParseKeyFileAsBytes(string keyFilePath)
     {
-        Logger.LogTrace("Parsing key file as bytes: {KeyFilePath}", keyFilePath);
+        Logger.Value.LogTrace("Parsing key file as bytes: {KeyFilePath}", keyFilePath);
 
         var (privateKeyLine, publicKeyLine) = ParseKeyFile(keyFilePath);
         var privateKey = DecodeAgeSecretKey(privateKeyLine);
@@ -138,26 +138,26 @@ public static class KeyFileUtils
         var m = AgeSecretKeyRegex.Match(privateKeyLine);
         if (!m.Success)
         {
-            Logger.LogTrace("Invalid AGE-SECRET-KEY format");
+            Logger.Value.LogTrace("Invalid AGE-SECRET-KEY format");
             throw new AgeKeyException("Invalid AGE-SECRET-KEY format");
         }
 
         var bech32 = privateKeyLine.Trim();
         var (hrp, data) = Bech32.Decode(bech32);
 
-        Logger.LogTrace("Bech32 decoded - HRP: {Hrp}, Data length: {DataLength}", hrp, data.Length);
+        Logger.Value.LogTrace("Bech32 decoded - HRP: {Hrp}, Data length: {DataLength}", hrp, data.Length);
 
         // Accept both uppercase and lowercase HRP for secret keys
         if (!string.Equals(hrp, "AGE-SECRET-KEY-", StringComparison.OrdinalIgnoreCase))
         {
-            Logger.LogTrace("Invalid AGE-SECRET-KEY HRP: {Hrp}", hrp);
+            Logger.Value.LogTrace("Invalid AGE-SECRET-KEY HRP: {Hrp}", hrp);
             throw new AgeKeyException("Invalid AGE-SECRET-KEY format");
         }
 
         // Bech32.Decode already converts 5-bit to 8-bit, so just validate length
         if (data.Length != 32)
         {
-            Logger.LogTrace("Invalid AGE-SECRET-KEY length: {DataLength} (expected 32)", data.Length);
+            Logger.Value.LogTrace("Invalid AGE-SECRET-KEY length: {DataLength} (expected 32)", data.Length);
             throw new AgeKeyException("Invalid AGE-SECRET-KEY length");
         }
 
@@ -174,30 +174,30 @@ public static class KeyFileUtils
         var m = AgePublicKeyRegex.Match(publicKeyLine);
         if (!m.Success)
         {
-            Logger.LogTrace("Invalid age public key format");
+            Logger.Value.LogTrace("Invalid age public key format");
             throw new AgeKeyException("Invalid age public key format");
         }
 
         var bech32 = publicKeyLine.Trim();
         var (hrp, data) = Bech32.Decode(bech32);
 
-        Logger.LogTrace("Bech32 decoded - HRP: {Hrp}, Data length: {DataLength}", hrp, data.Length);
+        Logger.Value.LogTrace("Bech32 decoded - HRP: {Hrp}, Data length: {DataLength}", hrp, data.Length);
 
         // Only accept lowercase HRP for public keys (matching age implementation)
         if (!string.Equals(hrp, "age", StringComparison.Ordinal))
         {
-            Logger.LogTrace("Invalid age public key HRP: {Hrp}", hrp);
+            Logger.Value.LogTrace("Invalid age public key HRP: {Hrp}", hrp);
             throw new AgeKeyException("Invalid age public key format");
         }
 
         // Bech32.Decode already converts 5-bit to 8-bit, so just validate length
         if (data.Length != 32)
         {
-            Logger.LogTrace("Invalid age public key length: {DataLength} (expected 32)", data.Length);
+            Logger.Value.LogTrace("Invalid age public key length: {DataLength} (expected 32)", data.Length);
             throw new AgeKeyException("Invalid age public key length");
         }
 
-        Logger.LogTrace("Successfully decoded age public key length: {PublicKeyLength} bytes", data.Length);
+        Logger.Value.LogTrace("Successfully decoded age public key length: {PublicKeyLength} bytes", data.Length);
         return data;
     }
 
@@ -242,7 +242,7 @@ public static class KeyFileUtils
     /// <returns>A list of recipient strings.</returns>
     public static List<string> ReadRecipientsFile(string recipientsFilePath)
     {
-        Logger.LogTrace("Reading recipients file: {RecipientsFilePath}", recipientsFilePath);
+        Logger.Value.LogTrace("Reading recipients file: {RecipientsFilePath}", recipientsFilePath);
 
         var recipients = new List<string>();
         IEnumerable<string> lines;

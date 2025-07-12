@@ -14,7 +14,7 @@ namespace DotAge.Core.Crypto;
 /// </summary>
 public static class ChaCha20Poly1305
 {
-    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ChaCha20Poly1305));
+    private static readonly Lazy<ILogger> Logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ChaCha20Poly1305)));
     private static readonly AeadAlgorithm Algorithm = AeadAlgorithm.ChaCha20Poly1305;
 
     public const int KeySize = 32;
@@ -46,7 +46,7 @@ public static class ChaCha20Poly1305
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "ChaCha20Poly1305 encryption failed");
+            Logger.Value.LogError(ex, "ChaCha20Poly1305 encryption failed");
             throw new AgeCryptoException("Encryption failed", ex);
         }
     }
@@ -81,12 +81,12 @@ public static class ChaCha20Poly1305
         }
         catch (CryptographicException ex)
         {
-            Logger.LogError(ex, "ChaCha20Poly1305 decryption failed");
+            Logger.Value.LogError(ex, "ChaCha20Poly1305 decryption failed");
             throw new AgeCryptoException("Authentication tag verification failed", ex);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "ChaCha20Poly1305 decryption failed");
+            Logger.Value.LogError(ex, "ChaCha20Poly1305 decryption failed");
             throw new AgeCryptoException("Decryption failed", ex);
         }
     }
@@ -129,12 +129,12 @@ public static class ChaCha20Poly1305
         }
         catch (CryptographicException ex)
         {
-            Logger.LogError(ex, "ChaCha20Poly1305 decryption with size validation failed");
+            Logger.Value.LogError(ex, "ChaCha20Poly1305 decryption with size validation failed");
             throw new AgeCryptoException("Authentication tag verification failed", ex);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "ChaCha20Poly1305 decryption with size validation failed");
+            Logger.Value.LogError(ex, "ChaCha20Poly1305 decryption with size validation failed");
             throw new AgeCryptoException("Decryption failed", ex);
         }
     }

@@ -16,7 +16,7 @@ namespace DotAge.Core.Crypto;
 /// </summary>
 public class X25519
 {
-    private static readonly ILogger<X25519> Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<X25519>();
+    private static readonly Lazy<ILogger<X25519>> Logger = new Lazy<ILogger<X25519>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<X25519>());
     private static readonly KeyAgreementAlgorithm Algorithm = KeyAgreementAlgorithm.X25519;
 
     // X25519 key size in bytes
@@ -48,7 +48,7 @@ public class X25519
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "X25519 key pair generation failed");
+            Logger.Value.LogError(ex, "X25519 key pair generation failed");
             throw new AgeKeyException("X25519 key pair generation failed", ex);
         }
     }
@@ -87,7 +87,7 @@ public class X25519
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "X25519 key agreement failed");
+            Logger.Value.LogError(ex, "X25519 key agreement failed");
             throw new AgeKeyException("X25519 key agreement failed", ex);
         }
     }
@@ -114,7 +114,7 @@ public class X25519
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "X25519 public key derivation failed");
+            Logger.Value.LogError(ex, "X25519 public key derivation failed");
             throw new AgeKeyException("X25519 public key derivation failed", ex);
         }
     }

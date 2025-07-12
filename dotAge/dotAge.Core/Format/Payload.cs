@@ -13,7 +13,7 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Payload
 {
-    private static readonly ILogger<Payload> _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<Payload>();
+    private static readonly Lazy<ILogger<Payload>> _logger = new Lazy<ILogger<Payload>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<Payload>());
 
     /// <summary>
     ///     Initializes a new payload with the given file key.
@@ -25,8 +25,8 @@ public class Payload
             throw new AgeKeyException("File key must be 16 bytes");
         
         FileKey = fileKey;
-        _logger.LogTrace("Created payload with file key length: {FileKeyLength} bytes", fileKey.Length);
-        _logger.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
+        _logger.Value.LogTrace("Created payload with file key length: {FileKeyLength} bytes", fileKey.Length);
+        _logger.Value.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
     }
 
     /// <summary>
@@ -48,14 +48,14 @@ public class Payload
         // Generate a random nonce (16 bytes) and write it at the beginning of the payload
         // Reference: Go age.go#L98, Rust format.rs
         var nonce = RandomUtils.GenerateRandomBytes(16);
-        _logger.LogTrace("Generated nonce: {Nonce}", BitConverter.ToString(nonce));
+        _logger.Value.LogTrace("Generated nonce: {Nonce}", BitConverter.ToString(nonce));
 
         destination.Write(nonce, 0, nonce.Length);
 
         // Derive the stream key and create the chunked writer
         // Reference: Go streamKey(fileKey, nonce), Rust stream_key
         var streamKey = DeriveStreamKey(FileKey, nonce);
-        _logger.LogTrace("Derived stream key: {StreamKey}", BitConverter.ToString(streamKey));
+        _logger.Value.LogTrace("Derived stream key: {StreamKey}", BitConverter.ToString(streamKey));
 
         return ChunkedStream.CreateWriter(streamKey, destination);
     }
@@ -78,12 +78,12 @@ public class Payload
         if (bytesRead != 16)
             throw new AgeDecryptionException("Failed to read nonce from payload");
 
-        _logger.LogTrace("Read nonce from source stream: {Nonce}", BitConverter.ToString(nonce));
+        _logger.Value.LogTrace("Read nonce from source stream: {Nonce}", BitConverter.ToString(nonce));
 
         // Derive the stream key and create the chunked reader
         // Reference: Go streamKey(fileKey, nonce), Rust stream_key
         var streamKey = DeriveStreamKey(FileKey, nonce);
-        _logger.LogTrace("Derived stream key: {StreamKey}", BitConverter.ToString(streamKey));
+        _logger.Value.LogTrace("Derived stream key: {StreamKey}", BitConverter.ToString(streamKey));
 
         return ChunkedStream.CreateReader(streamKey, source);
     }
@@ -100,8 +100,8 @@ public class Payload
         if (destination == null)
             throw new ArgumentNullException(nameof(destination));
 
-        _logger.LogTrace("Data to encrypt: {DataLength} bytes", data.Length);
-        _logger.LogTrace("Data (first 64 bytes): {DataPrefix}", BitConverter.ToString(data.Take(64).ToArray()));
+        _logger.Value.LogTrace("Data to encrypt: {DataLength} bytes", data.Length);
+        _logger.Value.LogTrace("Data (first 64 bytes): {DataPrefix}", BitConverter.ToString(data.Take(64).ToArray()));
 
         using (var writer = CreateEncryptWriter(destination))
         {
@@ -129,13 +129,13 @@ public class Payload
             }
             catch (IOException ex)
             {
-                _logger.LogTrace("IO error during chunked decryption: {Error}", ex.Message);
+                _logger.Value.LogTrace("IO error during chunked decryption: {Error}", ex.Message);
                 throw new AgeDecryptionException("Error during chunked decryption", ex);
             }
 
             var result = memoryStream.ToArray();
-            _logger.LogTrace("Decrypted data: {ResultLength} bytes", result.Length);
-            _logger.LogTrace("Decrypted data (first 64 bytes): {ResultPrefix}", BitConverter.ToString(result.Take(64).ToArray()));
+            _logger.Value.LogTrace("Decrypted data: {ResultLength} bytes", result.Length);
+            _logger.Value.LogTrace("Decrypted data (first 64 bytes): {ResultPrefix}", BitConverter.ToString(result.Take(64).ToArray()));
             return result;
         }
     }
@@ -154,14 +154,14 @@ public class Payload
         if (nonce == null || nonce.Length != 16)
             throw new AgeCryptoException("Nonce must be 16 bytes");
 
-        _logger.LogTrace("Deriving stream key using HKDF");
-        _logger.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
-        _logger.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
+        _logger.Value.LogTrace("Deriving stream key using HKDF");
+        _logger.Value.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
+        _logger.Value.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
 
         // Use HKDF with SHA256, fileKey as IKM (secret), nonce as salt, and "payload" as info
         // Reference: Go hkdf.New(sha256.New, fileKey, nonce, []byte("payload")), Rust hkdf(salt, label, ikm)
         var streamKey = Hkdf.DeriveKey(fileKey, nonce, "payload", 32);
-        _logger.LogTrace("Derived stream key: {StreamKey}", BitConverter.ToString(streamKey));
+        _logger.Value.LogTrace("Derived stream key: {StreamKey}", BitConverter.ToString(streamKey));
 
         return streamKey;
     }

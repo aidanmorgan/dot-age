@@ -9,7 +9,6 @@ namespace DotAge.Core.Logging;
 public static class LoggerFactory
 {
     private static ILoggerFactory? _loggerFactory;
-    private static bool _forceTraceMode = false;
 
     /// <summary>
     ///     Gets or sets the logger factory instance.
@@ -21,47 +20,16 @@ public static class LoggerFactory
             if (_loggerFactory != null)
                 return _loggerFactory;
 
+            _loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
+            {
+                builder.ClearProviders();
+                builder.AddProvider(new FilteredConsoleLoggerProvider());
 #if DEBUG
-            var minLevel = _forceTraceMode ? LogLevel.Trace : LogLevel.Information;
-            _loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
-            {
-                // Console logging - configurable minimum level
-                builder.AddConsole(options =>
-                {
-                    options.IncludeScopes = false;
-                })
-                .SetMinimumLevel(minLevel);
-
-                // File logging - all levels including Trace (only in debug builds)
                 builder.AddProvider(new FileLoggerProvider("dotage-stress.log"));
-            });
-#else
-            _loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
-            {
-                // Console logging - only Info and above in release builds
-                builder.AddConsole(options =>
-                {
-                    options.IncludeScopes = false;
-                })
-                .SetMinimumLevel(LogLevel.Information);
-                
-                // No file logging in release builds
-            });
 #endif
+            });
             return _loggerFactory;
         }
-        set => _loggerFactory = value;
-    }
-
-    /// <summary>
-    ///     Forces trace mode for debug builds. Only effective in debug builds.
-    /// </summary>
-    public static void ForceTraceMode()
-    {
-#if DEBUG
-        _forceTraceMode = true;
-        _loggerFactory = null; // Force recreation with new settings
-#endif
     }
 
     /// <summary>
@@ -82,6 +50,55 @@ public static class LoggerFactory
     public static ILogger CreateLogger(string categoryName)
     {
         return Instance.CreateLogger(categoryName);
+    }
+}
+
+/// <summary>
+///     Console logger provider that filters out Trace and Debug messages.
+/// </summary>
+public class FilteredConsoleLoggerProvider : ILoggerProvider
+{
+    public ILogger CreateLogger(string categoryName)
+    {
+        return new FilteredConsoleLogger(categoryName);
+    }
+
+    public void Dispose()
+    {
+        // Nothing to dispose
+    }
+}
+
+/// <summary>
+///     Console logger that only shows Info level and above.
+/// </summary>
+public class FilteredConsoleLogger : ILogger
+{
+    private readonly string _categoryName;
+
+    public FilteredConsoleLogger(string categoryName)
+    {
+        _categoryName = categoryName;
+    }
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel)
+    {
+        return logLevel >= LogLevel.Information; // Only Info and above
+    }
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        if (!IsEnabled(logLevel))
+            return;
+
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        var level = logLevel.ToString().ToUpperInvariant();
+        var message = formatter(state, exception);
+        var logEntry = $"{timestamp} [{level}] {_categoryName}: {message}";
+        
+        Console.WriteLine(logEntry);
     }
 }
 
@@ -129,11 +146,7 @@ public class FileLogger : ILogger
 
     public bool IsEnabled(LogLevel logLevel)
     {
-#if DEBUG
-        return true; // Allow all log levels in debug builds
-#else
-        return logLevel >= LogLevel.Information; // Only Info and above in release builds
-#endif
+        return true; // Allow all log levels
     }
 
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)

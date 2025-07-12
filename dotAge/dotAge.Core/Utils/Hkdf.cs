@@ -10,7 +10,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class Hkdf
 {
-    private static readonly ILogger _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Hkdf));
+    private static readonly Lazy<ILogger> _logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Hkdf)));
 
     /// <summary>
     ///     Derives a key using HKDF (HMAC-based Key Derivation Function).
@@ -28,13 +28,13 @@ public static class Hkdf
         if (string.IsNullOrEmpty(info)) throw new ArgumentException("Info cannot be null or empty", nameof(info));
         if (length <= 0) throw new ArgumentException("Length must be positive", nameof(length));
 
-        _logger.LogTrace("Starting HKDF key derivation");
-        _logger.LogTrace("IKM length: {IkmLength} bytes", ikm.Length);
-        _logger.LogTrace("Salt length: {SaltLength} bytes", salt.Length);
-        _logger.LogTrace("Info: '{Info}' (length: {InfoLength})", info, info.Length);
-        _logger.LogTrace("Length: {Length}", length);
-        _logger.LogTrace("IKM: {Ikm}", BitConverter.ToString(ikm));
-        _logger.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
+        _logger.Value.LogTrace("Starting HKDF key derivation");
+        _logger.Value.LogTrace("IKM length: {IkmLength} bytes", ikm.Length);
+        _logger.Value.LogTrace("Salt length: {SaltLength} bytes", salt.Length);
+        _logger.Value.LogTrace("Info: '{Info}' (length: {InfoLength})", info, info.Length);
+        _logger.Value.LogTrace("Length: {Length}", length);
+        _logger.Value.LogTrace("IKM: {Ikm}", BitConverter.ToString(ikm));
+        _logger.Value.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
 
         // Extract PRK (RFC 5869, Go/rust reference: HMAC-SHA256(salt, IKM))
         byte[] prk;
@@ -42,17 +42,17 @@ public static class Hkdf
         {
             prk = hmac.ComputeHash(ikm);
         }
-        _logger.LogTrace("PRK (Pseudo-Random Key) length: {PrkLength} bytes", prk.Length);
-        _logger.LogTrace("PRK: {Prk}", BitConverter.ToString(prk));
+        _logger.Value.LogTrace("PRK (Pseudo-Random Key) length: {PrkLength} bytes", prk.Length);
+        _logger.Value.LogTrace("PRK: {Prk}", BitConverter.ToString(prk));
 
         // Expand
         var infoBytes = Encoding.UTF8.GetBytes(info);
-        _logger.LogTrace("Info bytes length: {InfoBytesLength} bytes", infoBytes.Length);
-        _logger.LogTrace("Info bytes: {InfoBytes}", BitConverter.ToString(infoBytes));
+        _logger.Value.LogTrace("Info bytes length: {InfoBytesLength} bytes", infoBytes.Length);
+        _logger.Value.LogTrace("Info bytes: {InfoBytes}", BitConverter.ToString(infoBytes));
 
         var okm = Expand(prk, infoBytes, length);
-        _logger.LogTrace("HKDF derivation complete. Result length: {ResultLength} bytes", okm.Length);
-        _logger.LogTrace("OKM: {Okm}", BitConverter.ToString(okm));
+        _logger.Value.LogTrace("HKDF derivation complete. Result length: {ResultLength} bytes", okm.Length);
+        _logger.Value.LogTrace("OKM: {Okm}", BitConverter.ToString(okm));
 
         return okm;
     }

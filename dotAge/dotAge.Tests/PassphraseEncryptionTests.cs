@@ -16,11 +16,6 @@ public class PassphraseEncryptionTests : IDisposable
     private readonly string _tempDir;
     private readonly ILogger _logger;
 
-    static PassphraseEncryptionTests()
-    {
-        // Initialize logging from core LoggerFactory
-        DotAge.Core.Logging.LoggerFactory.ForceTraceMode();
-    }
 
     public PassphraseEncryptionTests()
     {
