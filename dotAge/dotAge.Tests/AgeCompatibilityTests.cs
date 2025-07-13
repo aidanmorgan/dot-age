@@ -318,12 +318,14 @@ public class AgeCompatibilityTests : IDisposable
         await TestUtils.RunCommandAsync("age",
             $"-e -r {publicKey1Line} -r {publicKey2Line} -o {ageEncryptedFile} {testDataFile}", null, _logger);
 
-        // Decrypt with dotage using either key
+        // Decrypt with dotage using both keys
         var dotageDecryptedFile = Path.Combine(_tempDir, "test8_dotage_decrypted.txt");
         var (privateKey1Bytes, publicKey1Bytes) = KeyFileUtils.ParseKeyFileAsBytes(key1File);
+        var (privateKey2Bytes, publicKey2Bytes) = KeyFileUtils.ParseKeyFileAsBytes(key2File);
 
         var age = await Task.Run(() => new Age(), cts.Token);
-        await Task.Run(() => age.AddIdentity(new X25519Recipient(publicKey1Bytes, privateKey1Bytes)), cts.Token);
+        await Task.Run(() => age.AddIdentity(new X25519Recipient(privateKey1Bytes, publicKey1Bytes)), cts.Token);
+        await Task.Run(() => age.AddIdentity(new X25519Recipient(privateKey2Bytes, publicKey2Bytes)), cts.Token);
         await Task.Run(() => age.DecryptFile(ageEncryptedFile, dotageDecryptedFile), cts.Token);
 
         // Verify the decrypted data matches the original

@@ -93,13 +93,13 @@ public static class ChunkedStream
 /// </summary>
 public class ChunkedStreamWriter : Stream
 {
+    private readonly byte[] _buffer = new byte[ChunkSize];
+    private int _bufferLength = 0;
     private readonly byte[] _key;
-    private readonly Stream _output;
-    private readonly byte[] _buffer;
     private readonly byte[] _nonce;
-    private int _bufferLength;
-    private bool _disposed;
-    private bool _closed;
+    private readonly Stream _output;
+    private bool _disposed = false;
+    private bool _closed = false;
 
     public ChunkedStreamWriter(byte[] key, Stream output)
     {
@@ -126,8 +126,10 @@ public class ChunkedStreamWriter : Stream
     {
         if (_disposed) throw new ObjectDisposedException(nameof(ChunkedStreamWriter));
         if (_closed) throw new InvalidOperationException("Writer is closed");
+        
         int remaining = count;
         int bufferOffset = offset;
+        
         while (remaining > 0)
         {
             int toWrite = Math.Min(remaining, ChunkSize - _bufferLength);
@@ -135,9 +137,11 @@ public class ChunkedStreamWriter : Stream
             _bufferLength += toWrite;
             remaining -= toWrite;
             bufferOffset += toWrite;
-            if (_bufferLength == ChunkSize)
+            
+            // Only flush if buffer is full AND there's more data to write
+            if (_bufferLength == ChunkSize && remaining > 0)
             {
-                FlushChunk(false);
+                FlushChunk(false); // not last chunk
             }
         }
     }
@@ -146,20 +150,36 @@ public class ChunkedStreamWriter : Stream
     {
         if (_disposed) throw new ObjectDisposedException(nameof(ChunkedStreamWriter));
         if (_closed) return;
-        // Always flush a chunk (even if empty) to match Go implementation
-        FlushChunk(true);
+        
+        // Always flush remaining data as the last chunk
+        if (_bufferLength > 0)
+        {
+            FlushChunk(true); // last chunk
+        }
+        else
+        {
+            // If no data was written, write an empty last chunk
+            FlushChunk(true); // last chunk
+        }
         _closed = true;
     }
 
     private void FlushChunk(bool isLast)
     {
+        if (!isLast && _bufferLength != ChunkSize)
+        {
+            throw new InvalidOperationException("Internal error: flush called with partial chunk");
+        }
+        
         var chunkData = new byte[_bufferLength];
         Buffer.BlockCopy(_buffer, 0, chunkData, 0, _bufferLength);
         var nonceCopy = (byte[])_nonce.Clone();
+        
         if (isLast)
         {
             SetLastChunkFlag(nonceCopy);
         }
+        
         var encrypted = ChaCha20Poly1305.Encrypt(_key, nonceCopy, chunkData);
         _output.Write(encrypted, 0, encrypted.Length);
         IncrementNonce(_nonce);
@@ -289,12 +309,30 @@ public class ChunkedStreamReader : Stream
         bool isLast = n < encryptedSize;
         if (isLast)
         {
+            // Check for empty last chunk (only 16 bytes = just the auth tag)
             if (!IsNonceZero(_nonce) && n == 16)
             {
                 throw new AgeFormatException("last chunk is empty");
             }
             // Set the last chunk flag immediately (matching Go implementation)
             SetLastChunkFlag(_nonce);
+        }
+        else
+        {
+            // If we read exactly a full chunk, we need to check if there's more data
+            // Try to read one more byte to see if this is actually the last chunk
+            int nextByte = _input.ReadByte();
+            if (nextByte == -1)
+            {
+                // No more data, this was the last chunk
+                isLast = true;
+                SetLastChunkFlag(_nonce);
+            }
+            else
+            {
+                // Put the byte back for the next read
+                _input.Position = _input.Position - 1;
+            }
         }
         
         var chunkData = new byte[n];

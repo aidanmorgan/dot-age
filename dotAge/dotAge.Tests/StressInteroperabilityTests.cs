@@ -114,7 +114,7 @@ public class StressInteroperabilityTests : IDisposable
     private async Task RunRandomizedTest(int testNumber, byte[] testData, string passphrase, bool isBinary)
     {
         var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
-        logger.LogTrace("=== TEST {TestNumber} START ===", testNumber);
+        logger.LogTrace("=== TEST {TestNumber}/{TotalTests} START ===", testNumber + 1, DefaultStressTestCount);
         logger.LogTrace("Test data length: {DataLength} bytes", testData.Length);
         logger.LogTrace("Test data type: {DataType}", isBinary ? "Binary" : "Text");
         logger.LogTrace("Test data (first 32 bytes): {DataPrefix}", BitConverter.ToString(testData.Take(32).ToArray()));
@@ -148,7 +148,7 @@ public class StressInteroperabilityTests : IDisposable
 
         var selectedTest = testMethods[_random.Next(testMethods.Length)];
         
-        logger.LogTrace("Test {TestNumber}: Running permutation: {Permutation}", testNumber, selectedTest.Name);
+        logger.LogInformation("Test {TestNumber}/{TotalTests}: Running permutation: {Permutation}", testNumber + 1, DefaultStressTestCount, selectedTest.Name);
         
         try
         {
@@ -164,7 +164,7 @@ public class StressInteroperabilityTests : IDisposable
         }
         finally
         {
-            logger.LogTrace("=== TEST {TestNumber} END ===", testNumber);
+            logger.LogTrace("=== TEST {TestNumber}/{TotalTests} END ===", testNumber + 1, DefaultStressTestCount);
         }
     }
 
@@ -172,7 +172,6 @@ public class StressInteroperabilityTests : IDisposable
     private async Task TestDotAgeEncryptAgeDecryptDotAgeKey(string testDir, byte[] testData)
     {
         var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
-        logger.LogInformation("Running: dotage->age (dotage key)");
         
         using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
@@ -205,7 +204,6 @@ public class StressInteroperabilityTests : IDisposable
     private async Task TestDotAgeEncryptAgeDecryptAgeKey(string testDir, byte[] testData)
     {
         var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
-        logger.LogInformation("Running: dotage->age (age key)");
         
         using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
@@ -238,7 +236,6 @@ public class StressInteroperabilityTests : IDisposable
     private async Task TestDotAgeEncryptAgeDecryptPassphrase(string testDir, byte[] testData, string passphrase)
     {
         var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
-        logger.LogInformation("Running: dotage->age (passphrase)");
         
         using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
@@ -264,9 +261,7 @@ public class StressInteroperabilityTests : IDisposable
     private async Task TestAgeEncryptDotAgeDecryptPassphrase(string testDir, byte[] testData, string passphrase)
     {
         var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
-        logger.LogInformation("Running: age->dotage (passphrase)");
-        logger.LogTrace("=== PERMUTATION: age->dotage (passphrase) ===");
-        
+
         using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
         
@@ -291,7 +286,6 @@ public class StressInteroperabilityTests : IDisposable
     private async Task TestDotAgeEncryptRageDecryptDotAgeKey(string testDir, byte[] testData)
     {
         var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
-        logger.LogInformation("Running: dotage->rage (dotage key)");
         
         using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
@@ -324,7 +318,6 @@ public class StressInteroperabilityTests : IDisposable
     private async Task TestDotAgeEncryptRageDecryptRageKey(string testDir, byte[] testData)
     {
         var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
-        logger.LogInformation("Running: dotage->rage (rage key)");
         
         using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
@@ -357,7 +350,6 @@ public class StressInteroperabilityTests : IDisposable
     private async Task TestDotAgeEncryptRageDecryptPassphrase(string testDir, byte[] testData, string passphrase)
     {
         var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
-        logger.LogInformation("Running: dotage->rage (passphrase)");
         
         using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
@@ -383,7 +375,6 @@ public class StressInteroperabilityTests : IDisposable
     private async Task TestRageEncryptDotAgeDecryptPassphrase(string testDir, byte[] testData, string passphrase)
     {
         var logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<StressInteroperabilityTests>();
-        logger.LogInformation("Running: rage->dotage (passphrase)");
         
         using var cts = new CancellationTokenSource(TestTimeout);
         var testNumber = Path.GetFileName(testDir).Split('_').Last();
