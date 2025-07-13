@@ -37,13 +37,38 @@ jobs:
       run: |
         echo "SemVer: ${{ steps.gitversion.outputs.semVer }}"
         echo "NuGetVersion: ${{ steps.gitversion.outputs.nuGetVersion }}"
+        echo "FullSemVer: ${{ steps.gitversion.outputs.fullSemVer }}"
+        echo "Sha: ${{ steps.gitversion.outputs.sha }}"
 
-    - name: Set Version Environment Variable
-      run: echo "DOT_AGE_VERSION=${{ steps.gitversion.outputs.nuGetVersion }}" >> $GITHUB_ENV
+    - name: Set Version Environment Variables
+      run: |
+        echo "DOT_AGE_VERSION=${{ steps.gitversion.outputs.nuGetVersion }}" >> $GITHUB_ENV
+        echo "DOT_AGE_SEMVER=${{ steps.gitversion.outputs.semVer }}" >> $GITHUB_ENV
+        echo "DOT_AGE_FULL_SEMVER=${{ steps.gitversion.outputs.fullSemVer }}" >> $GITHUB_ENV
+        echo "DOT_AGE_SHA=${{ steps.gitversion.outputs.sha }}" >> $GITHUB_ENV
+        echo "BUILD_DATE=$(date -u +'%Y-%m-%d')" >> $GITHUB_ENV
 
     - name: Update nuspec version
       run: |
+        # Update version in nuspec file
         sed -i "s/<version>.*<\/version>/<version>${{ env.DOT_AGE_VERSION }}<\/version>/" DotAge/DotAge.Core/DotAge.Core.nuspec
+        echo "Updated nuspec version to ${{ env.DOT_AGE_VERSION }}"
+
+    - name: Update VersionInfo.cs
+      run: |
+        # Update VersionInfo.cs with version information
+        cat > DotAge/DotAge.Core/VersionInfo.cs << 'EOF'
+        namespace DotAge.Core;
+
+        public class VersionInfo
+        {
+            public static readonly string Version = "${{ env.DOT_AGE_SEMVER }}";
+            public static readonly string FullVersion = "${{ env.DOT_AGE_FULL_SEMVER }}";
+            public static readonly string Date = "${{ env.BUILD_DATE }}";
+            public static readonly string CommitHash = "${{ env.DOT_AGE_SHA }}";
+        }
+        EOF
+        echo "Updated VersionInfo.cs with version ${{ env.DOT_AGE_SEMVER }}, full version ${{ env.DOT_AGE_FULL_SEMVER }}, date ${{ env.BUILD_DATE }}, and commit ${{ env.DOT_AGE_SHA }}"
 
     - name: Restore dependencies
       run: dotnet restore DotAge/DotAge.sln
