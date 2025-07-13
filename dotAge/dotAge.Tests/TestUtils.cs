@@ -1,16 +1,11 @@
 using System.Diagnostics;
-using System.Text;
-using DotAge.Cli;
-using DotAge.KeyGen;
 using Microsoft.Extensions.Logging;
-using Xunit;
 using Program = DotAge.Cli.Program;
 
 // prevent the tests running in parallel to make life a bit easier when dealing with files and processes
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
 namespace DotAge.Tests;
-
 
 /// <summary>
 ///     Utility class containing reusable methods for integration tests.
@@ -24,6 +19,9 @@ public class CommandResult
 
 public static class TestUtils
 {
+    private static readonly Program _cli = new();
+    private static readonly KeyGen.Program _keyGen = new();
+
     /// <summary>
     ///     Gets the path to the age binary.
     /// </summary>
@@ -36,8 +34,9 @@ public static class TestUtils
             {
                 if (File.Exists(envPath))
                     return envPath;
-                
-                Console.WriteLine($"Warning: Environment variable AGE_BINARY_PATH is set to '{envPath}' but file does not exist.");
+
+                Console.WriteLine(
+                    $"Warning: Environment variable AGE_BINARY_PATH is set to '{envPath}' but file does not exist.");
             }
 
             var defaultPath = Path.Combine("/usr/local/bin", "age");
@@ -57,8 +56,9 @@ public static class TestUtils
             {
                 if (File.Exists(envPath))
                     return envPath;
-                
-                Console.WriteLine($"Warning: Environment variable AGE_KEYGEN_BINARY_PATH is set to '{envPath}' but file does not exist.");
+
+                Console.WriteLine(
+                    $"Warning: Environment variable AGE_KEYGEN_BINARY_PATH is set to '{envPath}' but file does not exist.");
             }
 
             var defaultPath = Path.Combine("/usr/local/bin", "age-keygen");
@@ -78,8 +78,9 @@ public static class TestUtils
             {
                 if (File.Exists(envPath))
                     return envPath;
-                
-                Console.WriteLine($"Warning: Environment variable RAGE_BINARY_PATH is set to '{envPath}' but file does not exist.");
+
+                Console.WriteLine(
+                    $"Warning: Environment variable RAGE_BINARY_PATH is set to '{envPath}' but file does not exist.");
             }
 
             var defaultPath = Path.Combine("/usr/local/bin", "rage");
@@ -99,8 +100,9 @@ public static class TestUtils
             {
                 if (File.Exists(envPath))
                     return envPath;
-                
-                Console.WriteLine($"Warning: Environment variable RAGE_KEYGEN_BINARY_PATH is set to '{envPath}' but file does not exist.");
+
+                Console.WriteLine(
+                    $"Warning: Environment variable RAGE_KEYGEN_BINARY_PATH is set to '{envPath}' but file does not exist.");
             }
 
             var defaultPath = Path.Combine("/usr/local/bin", "rage-keygen");
@@ -125,17 +127,16 @@ public static class TestUtils
 
         var allAvailable = true;
         foreach (var (name, path) in binaries)
-        {
             if (path == null)
             {
-                logger?.LogWarning($"External binary '{name}' not found. Set {name.ToUpper().Replace("-", "_")}_BINARY_PATH environment variable to specify custom path.");
+                logger?.LogWarning(
+                    $"External binary '{name}' not found. Set {name.ToUpper().Replace("-", "_")}_BINARY_PATH environment variable to specify custom path.");
                 allAvailable = false;
             }
             else
             {
                 logger?.LogInformation($"Found {name} at: {path}");
             }
-        }
 
         return allAvailable;
     }
@@ -200,9 +201,8 @@ public static class TestUtils
     public static async Task<CommandResult> RunAgeAsync(string arguments, string? input = null, ILogger? logger = null)
     {
         if (AgeBinaryPath == null)
-        {
-            throw new InvalidOperationException("age binary not found. Set AGE_BINARY_PATH environment variable to specify custom path.");
-        }
+            throw new InvalidOperationException(
+                "age binary not found. Set AGE_BINARY_PATH environment variable to specify custom path.");
 
         return await RunCommandAsync(AgeBinaryPath, arguments, input, logger);
     }
@@ -214,12 +214,12 @@ public static class TestUtils
     /// <param name="input">Optional input to provide to the command.</param>
     /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunAgeKeyGenAsync(string arguments, string? input = null, ILogger? logger = null)
+    public static async Task<CommandResult> RunAgeKeyGenAsync(string arguments, string? input = null,
+        ILogger? logger = null)
     {
         if (AgeKeyGenBinaryPath == null)
-        {
-            throw new InvalidOperationException("age-keygen binary not found. Set AGE_KEYGEN_BINARY_PATH environment variable to specify custom path.");
-        }
+            throw new InvalidOperationException(
+                "age-keygen binary not found. Set AGE_KEYGEN_BINARY_PATH environment variable to specify custom path.");
 
         return await RunCommandAsync(AgeKeyGenBinaryPath, arguments, input, logger);
     }
@@ -234,9 +234,8 @@ public static class TestUtils
     public static async Task<CommandResult> RunRageAsync(string arguments, string? input = null, ILogger? logger = null)
     {
         if (RageBinaryPath == null)
-        {
-            throw new InvalidOperationException("rage binary not found. Set RAGE_BINARY_PATH environment variable to specify custom path.");
-        }
+            throw new InvalidOperationException(
+                "rage binary not found. Set RAGE_BINARY_PATH environment variable to specify custom path.");
 
         return await RunCommandAsync(RageBinaryPath, arguments, input, logger);
     }
@@ -248,19 +247,16 @@ public static class TestUtils
     /// <param name="input">Optional input to provide to the command.</param>
     /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunRageKeyGenAsync(string arguments, string? input = null, ILogger? logger = null)
+    public static async Task<CommandResult> RunRageKeyGenAsync(string arguments, string? input = null,
+        ILogger? logger = null)
     {
         if (RageKeyGenBinaryPath == null)
-        {
-            throw new InvalidOperationException("rage-keygen binary not found. Set RAGE_KEYGEN_BINARY_PATH environment variable to specify custom path.");
-        }
+            throw new InvalidOperationException(
+                "rage-keygen binary not found. Set RAGE_KEYGEN_BINARY_PATH environment variable to specify custom path.");
 
         return await RunCommandAsync(RageKeyGenBinaryPath, arguments, input, logger);
     }
 
-    private static readonly DotAge.Cli.Program _cli = new Program();
-    private static readonly DotAge.KeyGen.Program _keyGen = new DotAge.KeyGen.Program();
-    
     /// <summary>
     ///     Runs the dotage CLI using the static Run method instead of external binary.
     /// </summary>
@@ -268,7 +264,8 @@ public static class TestUtils
     /// <param name="input">Optional input to provide to the command.</param>
     /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunDotAgeAsync(string arguments, string? input = null, ILogger? logger = null)
+    public static async Task<CommandResult> RunDotAgeAsync(string arguments, string? input = null,
+        ILogger? logger = null)
     {
         // Capture console output by redirecting it
         var originalOut = Console.Out;
@@ -287,9 +284,9 @@ public static class TestUtils
 
             // Parse arguments
             var args = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            
+
             // Run the dotage CLI
-            
+
             var exitCode = await _cli.RunAsync(args);
 
             return new CommandResult
@@ -330,7 +327,7 @@ public static class TestUtils
 
             // Parse arguments
             var args = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            
+
             // Run the dotage-keygen CLI
             var exitCode = await _keyGen.RunAsync(args);
 
@@ -373,7 +370,7 @@ public static class TestUtils
     public static async Task<CommandResult> RunCommandWithExpectAsync(string command,
         string passphrase,
         string arguments,
-        ILogger logger = null)
+        ILogger? logger = null)
     {
         // Get the path to the expect script in the output directory
         var expectScriptPath = Path.Combine(AppContext.BaseDirectory, "age_passphrase.exp");

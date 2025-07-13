@@ -1,12 +1,7 @@
-using System;
-using System.Buffers;
-using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using DotAge.Core.Utils;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
 using NSec.Cryptography;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Crypto;
 
@@ -16,17 +11,23 @@ namespace DotAge.Core.Crypto;
 /// </summary>
 public class X25519
 {
-    private static readonly Lazy<ILogger<X25519>> Logger = new Lazy<ILogger<X25519>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<X25519>());
-    private static readonly KeyAgreementAlgorithm Algorithm = KeyAgreementAlgorithm.X25519;
-
-    // X25519 key size in bytes
+    /// <summary>
+    ///     X25519 key size in bytes.
+    /// </summary>
     public const int KeySize = 32;
 
-    // X25519 public key prefix in age format
+    /// <summary>
+    ///     X25519 public key prefix in age format.
+    /// </summary>
     public const string PublicKeyPrefix = "age1";
 
-    // X25519 private key prefix in age format
+    /// <summary>
+    ///     X25519 private key prefix in age format.
+    /// </summary>
     public const string PrivateKeyPrefix = "AGE-SECRET-KEY-";
+
+    private static readonly Lazy<ILogger<X25519>> Logger = new(() => LoggerFactory.CreateLogger<X25519>());
+    private static readonly KeyAgreementAlgorithm Algorithm = KeyAgreementAlgorithm.X25519;
 
     /// <summary>
     ///     Generates a new X25519 key pair.
@@ -40,7 +41,7 @@ public class X25519
             {
                 ExportPolicy = KeyExportPolicies.AllowPlaintextExport
             };
-            
+
             using var key = Key.Create(Algorithm, keyCreationParams);
             var privateKey = key.Export(KeyBlobFormat.RawPrivateKey);
             var publicKey = key.PublicKey.Export(KeyBlobFormat.RawPublicKey);
@@ -78,12 +79,14 @@ public class X25519
             {
                 ExportPolicy = KeyExportPolicies.AllowPlaintextExport
             };
-            
-            using var nsecPrivateKey = Key.Import(Algorithm, privateKey, KeyBlobFormat.RawPrivateKey, keyCreationParams);
+
+            using var nsecPrivateKey =
+                Key.Import(Algorithm, privateKey, KeyBlobFormat.RawPrivateKey, keyCreationParams);
             var nsecPublicKey = PublicKey.Import(Algorithm, publicKey, KeyBlobFormat.RawPublicKey);
-            
+
             using var sharedSecret = Algorithm.Agree(nsecPrivateKey, nsecPublicKey, sharedSecretCreationParams);
-            return sharedSecret?.Export(SharedSecretBlobFormat.RawSharedSecret) ?? throw new AgeKeyException("Key agreement failed to produce shared secret");
+            return sharedSecret?.Export(SharedSecretBlobFormat.RawSharedSecret) ??
+                   throw new AgeKeyException("Key agreement failed to produce shared secret");
         }
         catch (Exception ex)
         {
@@ -108,8 +111,9 @@ public class X25519
             {
                 ExportPolicy = KeyExportPolicies.AllowPlaintextExport
             };
-            
-            using var nsecPrivateKey = Key.Import(Algorithm, privateKey, KeyBlobFormat.RawPrivateKey, keyCreationParams);
+
+            using var nsecPrivateKey =
+                Key.Import(Algorithm, privateKey, KeyBlobFormat.RawPrivateKey, keyCreationParams);
             return nsecPrivateKey.PublicKey.Export(KeyBlobFormat.RawPublicKey);
         }
         catch (Exception ex)

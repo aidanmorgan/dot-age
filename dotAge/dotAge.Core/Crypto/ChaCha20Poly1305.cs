@@ -1,10 +1,8 @@
-using System;
-using System.Buffers;
 using System.Security.Cryptography;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
 using NSec.Cryptography;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Crypto;
 
@@ -14,13 +12,28 @@ namespace DotAge.Core.Crypto;
 /// </summary>
 public static class ChaCha20Poly1305
 {
-    private static readonly Lazy<ILogger> Logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ChaCha20Poly1305)));
-    private static readonly AeadAlgorithm Algorithm = AeadAlgorithm.ChaCha20Poly1305;
-
+    /// <summary>
+    ///     The key size in bytes for ChaCha20-Poly1305.
+    /// </summary>
     public const int KeySize = 32;
+
+    /// <summary>
+    ///     The nonce size in bytes for ChaCha20-Poly1305.
+    /// </summary>
     public const int NonceSize = 12;
+
+    /// <summary>
+    ///     The authentication tag size in bytes for ChaCha20-Poly1305.
+    /// </summary>
     public const int TagSize = 16;
+
+    /// <summary>
+    ///     The block size in bytes for ChaCha20-Poly1305.
+    /// </summary>
     public const int BlockSize = 64;
+
+    private static readonly Lazy<ILogger> Logger = new(() => LoggerFactory.CreateLogger(nameof(ChaCha20Poly1305)));
+    private static readonly AeadAlgorithm Algorithm = AeadAlgorithm.ChaCha20Poly1305;
 
     /// <summary>
     ///     Encrypts data using ChaCha20-Poly1305.
@@ -73,10 +86,7 @@ public static class ChaCha20Poly1305
             using var nsecKey = Key.Import(Algorithm, key, KeyBlobFormat.RawSymmetricKey);
             var plaintext = new byte[ciphertext.Length - TagSize];
             var success = Algorithm.Decrypt(nsecKey, nonce, ReadOnlySpan<byte>.Empty, ciphertext, plaintext);
-            if (!success)
-            {
-                throw new AgeCryptoException("Authentication tag verification failed");
-            }
+            if (!success) throw new AgeCryptoException("Authentication tag verification failed");
             return plaintext;
         }
         catch (CryptographicException ex)
@@ -102,7 +112,8 @@ public static class ChaCha20Poly1305
     /// <param name="expectedPlaintextSize">The expected size of the plaintext in bytes.</param>
     /// <returns>The plaintext.</returns>
     /// <exception cref="AgeCryptoException">Thrown when the ciphertext size doesn't match the expected size.</exception>
-    public static byte[] DecryptWithSizeValidation(byte[] key, byte[] nonce, byte[] ciphertext, int expectedPlaintextSize)
+    public static byte[] DecryptWithSizeValidation(byte[] key, byte[] nonce, byte[] ciphertext,
+        int expectedPlaintextSize)
     {
         if (key.Length != KeySize)
             throw new AgeCryptoException($"Key must be {KeySize} bytes, got {key.Length}");
@@ -112,19 +123,15 @@ public static class ChaCha20Poly1305
         // Validate that the ciphertext size matches the expected plaintext size + tag size
         var expectedCiphertextSize = expectedPlaintextSize + TagSize;
         if (ciphertext.Length != expectedCiphertextSize)
-        {
-            throw new AgeCryptoException($"Ciphertext size mismatch: expected {expectedCiphertextSize} bytes, got {ciphertext.Length} bytes");
-        }
+            throw new AgeCryptoException(
+                $"Ciphertext size mismatch: expected {expectedCiphertextSize} bytes, got {ciphertext.Length} bytes");
 
         try
         {
             using var nsecKey = Key.Import(Algorithm, key, KeyBlobFormat.RawSymmetricKey);
             var plaintext = new byte[expectedPlaintextSize];
             var success = Algorithm.Decrypt(nsecKey, nonce, ReadOnlySpan<byte>.Empty, ciphertext, plaintext);
-            if (!success)
-            {
-                throw new AgeCryptoException("Authentication tag verification failed");
-            }
+            if (!success) throw new AgeCryptoException("Authentication tag verification failed");
             return plaintext;
         }
         catch (CryptographicException ex)
