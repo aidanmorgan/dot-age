@@ -53,12 +53,12 @@ jobs:
         # Debug: Show current directory and file existence
         echo "Current directory: $(pwd)"
         echo "Checking if nuspec file exists:"
-        ls -la DotAge/DotAge.Core/DotAge.Core.nuspec || echo "File not found!"
+        ls -la ./DotAge/DotAge.Core/DotAge.Core.nuspec || echo "File not found!"
         
         # Update version in nuspec file
         VERSION="${{ env.DOT_AGE_VERSION }}"
         echo "Using version: $VERSION"
-        sed -i "s/<version>.*<\/version>/<version>$VERSION<\/version>/" DotAge/DotAge.Core/DotAge.Core.nuspec
+        sed -i "s/<version>.*<\/version>/<version>$VERSION<\/version>/" ./DotAge/DotAge.Core/DotAge.Core.nuspec
         echo "Updated nuspec version to $VERSION"
         
         # Verify the update
