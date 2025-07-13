@@ -50,25 +50,76 @@ jobs:
 
     - name: Update nuspec version
       run: |
+        # Debug: Show current directory and file existence
+        echo "Current directory: $(pwd)"
+        echo "Checking if nuspec file exists:"
+        ls -la DotAge/DotAge.Core/DotAge.Core.nuspec || echo "File not found!"
+        
         # Update version in nuspec file
-        sed -i "s/<version>.*<\/version>/<version>${{ env.DOT_AGE_VERSION }}<\/version>/" DotAge/DotAge.Core/DotAge.Core.nuspec
-        echo "Updated nuspec version to ${{ env.DOT_AGE_VERSION }}"
+        VERSION="${{ env.DOT_AGE_VERSION }}"
+        echo "Using version: $VERSION"
+        sed -i "s/<version>.*<\/version>/<version>$VERSION<\/version>/" DotAge/DotAge.Core/DotAge.Core.nuspec
+        echo "Updated nuspec version to $VERSION"
+        
+        # Verify the update
+        echo "Verifying nuspec file:"
+        grep "<version>" DotAge/DotAge.Core/DotAge.Core.nuspec
 
     - name: Update VersionInfo.cs
       run: |
+        # Debug: Show current directory and file existence
+        echo "Current directory: $(pwd)"
+        echo "Checking if VersionInfo.cs file exists:"
+        ls -la DotAge/DotAge.Core/VersionInfo.cs || echo "File not found!"
+        
+        # Set variables for clarity
+        VERSION="${{ env.DOT_AGE_SEMVER }}"
+        FULL_VERSION="${{ env.DOT_AGE_FULL_SEMVER }}"
+        BUILD_DATE="${{ env.BUILD_DATE }}"
+        COMMIT_HASH="${{ env.DOT_AGE_SHA }}"
+        
+        echo "Using version: $VERSION"
+        echo "Using full version: $FULL_VERSION"
+        echo "Using build date: $BUILD_DATE"
+        echo "Using commit hash: $COMMIT_HASH"
+        
         # Update VersionInfo.cs with version information
-        cat > DotAge/DotAge.Core/VersionInfo.cs << 'EOF'
+        cat > DotAge/DotAge.Core/VersionInfo.cs << EOF
         namespace DotAge.Core;
 
+        /// <summary>
+        ///     Provides version information for the DotAge library.
+        ///     This file is automatically updated by the GitHub Actions build process.
+        /// </summary>
         public class VersionInfo
         {
-            public static readonly string Version = "${{ env.DOT_AGE_SEMVER }}";
-            public static readonly string FullVersion = "${{ env.DOT_AGE_FULL_SEMVER }}";
-            public static readonly string Date = "${{ env.BUILD_DATE }}";
-            public static readonly string CommitHash = "${{ env.DOT_AGE_SHA }}";
+            /// <summary>
+            ///     The semantic version (e.g., "1.0.0").
+            /// </summary>
+            public static readonly string Version = "$VERSION";
+            
+            /// <summary>
+            ///     The full semantic version including pre-release tags (e.g., "1.0.0-beta.1").
+            /// </summary>
+            public static readonly string FullVersion = "$FULL_VERSION";
+            
+            /// <summary>
+            ///     The build date in YYYY-MM-DD format.
+            /// </summary>
+            public static readonly string Date = "$BUILD_DATE";
+            
+            /// <summary>
+            ///     The Git commit hash.
+            /// </summary>
+            public static readonly string CommitHash = "$COMMIT_HASH";
         }
         EOF
-        echo "Updated VersionInfo.cs with version ${{ env.DOT_AGE_SEMVER }}, full version ${{ env.DOT_AGE_FULL_SEMVER }}, date ${{ env.BUILD_DATE }}, and commit ${{ env.DOT_AGE_SHA }}"
+        
+        echo "Updated VersionInfo.cs with version $VERSION, full version $FULL_VERSION, date $BUILD_DATE, and commit $COMMIT_HASH"
+        
+        # Verify the update
+        echo "Verifying VersionInfo.cs file:"
+        head -10 DotAge/DotAge.Core/VersionInfo.cs
 
     - name: Restore dependencies
       run: dotnet restore DotAge/DotAge.sln
