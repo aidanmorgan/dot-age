@@ -1,26 +1,23 @@
-using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using DotAge.Core;
-using DotAge.Core.Recipients;
 using DotAge.Core.Exceptions;
+using DotAge.Core.Recipients;
 using Microsoft.Extensions.Logging;
-using DotAge.Core.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Tests;
 
 public class PassphraseEncryptionTests : IDisposable
 {
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(30);
-    private readonly string _tempDir;
     private readonly ILogger _logger;
+    private readonly string _tempDir;
 
 
     public PassphraseEncryptionTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("passphrase-tests");
-        _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<PassphraseEncryptionTests>();
+        _logger = LoggerFactory.CreateLogger<PassphraseEncryptionTests>();
     }
 
     public void Dispose()
@@ -74,7 +71,7 @@ public class PassphraseEncryptionTests : IDisposable
         var wrongAge = await Task.Run(() => new Age(), cts.Token);
         await Task.Run(() => wrongAge.AddIdentity(new ScryptRecipient(passphrase2)), cts.Token);
 
-        await Assert.ThrowsAsync<AgeDecryptionException>(async () => 
+        await Assert.ThrowsAsync<AgeDecryptionException>(async () =>
             await Task.Run(() => wrongAge.Decrypt(ciphertext), cts.Token));
     }
 
@@ -89,7 +86,7 @@ public class PassphraseEncryptionTests : IDisposable
         var age = await Task.Run(() => new Age(), cts.Token);
 
         // Act & Assert - Should throw when creating ScryptRecipient with empty passphrase
-        await Assert.ThrowsAsync<AgeKeyException>(async () => 
+        await Assert.ThrowsAsync<AgeKeyException>(async () =>
             await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase)), cts.Token));
     }
 
@@ -102,7 +99,7 @@ public class PassphraseEncryptionTests : IDisposable
         var age = await Task.Run(() => new Age(), cts.Token);
 
         // Act & Assert - Should throw when creating ScryptRecipient with null passphrase
-        await Assert.ThrowsAsync<AgeKeyException>(async () => 
+        await Assert.ThrowsAsync<AgeKeyException>(async () =>
             await Task.Run(() => age.AddRecipient(new ScryptRecipient(passphrase!)), cts.Token));
     }
 
@@ -284,7 +281,7 @@ public class PassphraseEncryptionTests : IDisposable
         var decryptedAge2 = await Task.Run(() => new Age(), cts.Token);
         await Task.Run(() => decryptedAge2.AddIdentity(new ScryptRecipient(passphrase2)), cts.Token);
 
-        await Assert.ThrowsAsync<AgeDecryptionException>(async () => 
+        await Assert.ThrowsAsync<AgeDecryptionException>(async () =>
             await Task.Run(() => decryptedAge2.Decrypt(ciphertext), cts.Token));
     }
 
@@ -373,7 +370,7 @@ public class PassphraseEncryptionTests : IDisposable
         var decryptedAge = await Task.Run(() => new Age(), cts.Token);
         await Task.Run(() => decryptedAge.AddIdentity(new ScryptRecipient(passphrase)), cts.Token);
 
-        await Assert.ThrowsAsync<AgeFormatException>(async () => 
+        await Assert.ThrowsAsync<AgeFormatException>(async () =>
             await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token));
     }
 
@@ -386,7 +383,7 @@ public class PassphraseEncryptionTests : IDisposable
         var age = await Task.Run(() => new Age(), cts.Token);
 
         // Act & Assert - Should throw when no recipients are specified
-        await Assert.ThrowsAsync<AgeEncryptionException>(async () => 
+        await Assert.ThrowsAsync<AgeEncryptionException>(async () =>
             await Task.Run(() => age.Encrypt(plaintext), cts.Token));
     }
 
@@ -404,7 +401,7 @@ public class PassphraseEncryptionTests : IDisposable
 
         // Act & Assert - Should throw when no identities are specified
         var decryptedAge = await Task.Run(() => new Age(), cts.Token);
-        await Assert.ThrowsAsync<AgeDecryptionException>(async () => 
+        await Assert.ThrowsAsync<AgeDecryptionException>(async () =>
             await Task.Run(() => decryptedAge.Decrypt(ciphertext), cts.Token));
     }
 
@@ -434,9 +431,11 @@ public class PassphraseEncryptionTests : IDisposable
         var ageCli = "age";
         var rageCli = "rage";
         // age decrypt
-        await TestUtils.RunCommandWithExpectAsync(ageCli, passphrase, $"-d -o {ageDecrypted} {dotageEncrypted}", _logger);
+        await TestUtils.RunCommandWithExpectAsync(ageCli, passphrase, $"-d -o {ageDecrypted} {dotageEncrypted}",
+            _logger);
         // rage decrypt
-        await TestUtils.RunCommandWithExpectAsync(rageCli, passphrase, $"-d -o {rageDecrypted} {dotageEncrypted}", _logger);
+        await TestUtils.RunCommandWithExpectAsync(rageCli, passphrase, $"-d -o {rageDecrypted} {dotageEncrypted}",
+            _logger);
 
         Assert.Equal(plaintext, await File.ReadAllBytesAsync(ageDecrypted, cts.Token));
         Assert.Equal(plaintext, await File.ReadAllBytesAsync(rageDecrypted, cts.Token));

@@ -1,12 +1,10 @@
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using DotAge.Core;
 using DotAge.Core.Crypto;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
-using DotAge.Core.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Tests;
 
@@ -29,7 +27,7 @@ public class RageCompatibilityTests : IDisposable
     public RageCompatibilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("dotage-rage-tests");
-        _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<RageCompatibilityTests>();
+        _logger = LoggerFactory.CreateLogger<RageCompatibilityTests>();
     }
 
     public void Dispose()

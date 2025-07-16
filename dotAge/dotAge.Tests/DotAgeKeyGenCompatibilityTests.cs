@@ -1,12 +1,12 @@
-using DotAge.KeyGen;
+using DotAge.Cli;
 
 namespace DotAge.Tests;
 
 public class DotAgeKeyGenCompatibilityTests : IDisposable
 {
-    private static readonly DotAge.Cli.Program _cli = new DotAge.Cli.Program();
-    private static readonly DotAge.KeyGen.Program _keyGen = new DotAge.KeyGen.Program();
-    
+    private static readonly Program _cli = new();
+    private static readonly KeyGen.Program _keyGen = new();
+
     private readonly string _tempDir;
 
     public DotAgeKeyGenCompatibilityTests()

@@ -1,16 +1,15 @@
 using System.CommandLine;
-using System.Security.Cryptography;
 using System.Text;
 using DotAge.Core;
+using DotAge.Core.Crypto;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
-using DotAge.Core.Crypto;
 
 namespace DotAge.Cli;
 
 /// <summary>
-/// Entry point for the DotAge CLI application.
+///     Entry point for the DotAge CLI application.
 /// </summary>
 public class Program
 {
@@ -45,15 +44,17 @@ Example:
     $ dotage --decrypt -i key.txt -o data.tar.gz data.tar.gz.age";
 
     /// <summary>
-    /// Creates a logger factory with console logging.
+    ///     Creates a logger factory with console logging.
     /// </summary>
     /// <returns>A configured logger factory.</returns>
-    private static ILoggerFactory CreateLoggerFactory() =>
-        LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
+    private static ILoggerFactory CreateLoggerFactory()
+    {
+        return LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
+    }
 
 
     /// <summary>
-    /// Application entry point.
+    ///     Application entry point.
     /// </summary>
     /// <param name="args">Command line arguments.</param>
     /// <returns>Exit code.</returns>
@@ -64,7 +65,7 @@ Example:
     }
 
     /// <summary>
-    /// Runs the application asynchronously with the specified arguments.
+    ///     Runs the application asynchronously with the specified arguments.
     /// </summary>
     /// <param name="args">Command line arguments.</param>
     /// <returns>Exit code.</returns>
@@ -107,7 +108,7 @@ Example:
 
 
     /// <summary>
-    /// Creates the encrypt command.
+    ///     Creates the encrypt command.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <returns>The encrypt command.</returns>
@@ -161,7 +162,7 @@ Example:
     }
 
     /// <summary>
-    /// Creates the decrypt command.
+    ///     Creates the decrypt command.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <returns>The decrypt command.</returns>
@@ -201,7 +202,7 @@ Example:
     }
 
     /// <summary>
-    /// Handles the encrypt command.
+    ///     Handles the encrypt command.
     /// </summary>
     private async Task<int> HandleEncryptAsync(
         bool encryptFlag,
@@ -267,7 +268,7 @@ Example:
     }
 
     /// <summary>
-    /// Validates encryption parameters to ensure they are valid.
+    ///     Validates encryption parameters to ensure they are valid.
     /// </summary>
     /// <returns>True if parameters are valid, false otherwise.</returns>
     private bool ValidateEncryptionParameters(
@@ -278,10 +279,10 @@ Example:
         ILogger logger)
     {
         // Validate that we have at least one recipient or passphrase
-        bool hasRecipients =
-            (recipientFlags?.Length > 0) ||
-            (recipientsFileFlags?.Length > 0) ||
-            (identityFlags?.Length > 0);
+        var hasRecipients =
+            recipientFlags?.Length > 0 ||
+            recipientsFileFlags?.Length > 0 ||
+            identityFlags?.Length > 0;
 
         if (!hasRecipients && !passphraseFlag)
         {
@@ -300,7 +301,7 @@ Example:
     }
 
     /// <summary>
-    /// Configures passphrase encryption by prompting for a passphrase and adding a ScryptRecipient.
+    ///     Configures passphrase encryption by prompting for a passphrase and adding a ScryptRecipient.
     /// </summary>
     /// <returns>True if successful, false otherwise.</returns>
     private bool ConfigurePassphraseEncryption(Age age, ILogger logger)
@@ -317,7 +318,7 @@ Example:
     }
 
     /// <summary>
-    /// Configures recipients from command line arguments, recipient files, and identity files.
+    ///     Configures recipients from command line arguments, recipient files, and identity files.
     /// </summary>
     /// <returns>True if successful, false otherwise.</returns>
     private bool ConfigureRecipients(
@@ -329,36 +330,29 @@ Example:
     {
         // Add recipients from command line arguments
         if (recipientFlags?.Length > 0)
-        {
             if (!AddRecipientsFromCommandLine(age, recipientFlags, logger))
                 return false;
-        }
 
         // Add recipients from recipient files
         if (recipientsFileFlags?.Length > 0)
-        {
             if (!AddRecipientsFromFiles(age, recipientsFileFlags, logger))
                 return false;
-        }
 
         // Add recipients from identity files
         if (identityFlags?.Length > 0)
-        {
             if (!AddRecipientsFromIdentityFiles(age, identityFlags, logger))
                 return false;
-        }
 
         return true;
     }
 
     /// <summary>
-    /// Adds recipients from command line arguments.
+    ///     Adds recipients from command line arguments.
     /// </summary>
     /// <returns>True if successful, false otherwise.</returns>
     private bool AddRecipientsFromCommandLine(Age age, string[] recipientFlags, ILogger logger)
     {
         foreach (var recipient in recipientFlags)
-        {
             try
             {
                 var publicKey = KeyFileUtils.DecodeAgePublicKey(recipient);
@@ -369,13 +363,12 @@ Example:
                 logger.LogError($"Invalid recipient '{recipient}': {ex.Message}");
                 return false;
             }
-        }
 
         return true;
     }
 
     /// <summary>
-    /// Adds recipients from recipient files.
+    ///     Adds recipients from recipient files.
     /// </summary>
     /// <returns>True if successful, false otherwise.</returns>
     private bool AddRecipientsFromFiles(Age age, string[] recipientsFileFlags, ILogger logger)
@@ -408,7 +401,7 @@ Example:
     }
 
     /// <summary>
-    /// Adds recipients from identity files.
+    ///     Adds recipients from identity files.
     /// </summary>
     /// <returns>True if successful, false otherwise.</returns>
     private bool AddRecipientsFromIdentityFiles(Age age, string[] identityFlags, ILogger logger)
@@ -438,7 +431,7 @@ Example:
     }
 
     /// <summary>
-    /// Handles the decrypt command.
+    ///     Handles the decrypt command.
     /// </summary>
     /// <param name="decryptFlag">Flag indicating decryption mode.</param>
     /// <param name="identityFlags">Identity files to use for decryption.</param>
@@ -515,7 +508,7 @@ Example:
     }
 
     /// <summary>
-    /// Validates that identity flags are provided when needed.
+    ///     Validates that identity flags are provided when needed.
     /// </summary>
     /// <param name="identityFlags">Identity flags to validate.</param>
     /// <param name="logger">Logger instance.</param>
@@ -532,7 +525,7 @@ Example:
     }
 
     /// <summary>
-    /// Configures passphrase decryption by prompting for a passphrase.
+    ///     Configures passphrase decryption by prompting for a passphrase.
     /// </summary>
     /// <param name="age">Age instance to configure.</param>
     /// <param name="logger">Logger instance.</param>
@@ -551,7 +544,7 @@ Example:
     }
 
     /// <summary>
-    /// Adds identities from identity files to the Age instance.
+    ///     Adds identities from identity files to the Age instance.
     /// </summary>
     /// <param name="age">The Age instance to add identities to.</param>
     /// <param name="identityFiles">Array of identity file paths.</param>
@@ -594,7 +587,7 @@ Example:
     }
 
     /// <summary>
-    /// Reads input data from a file or standard input.
+    ///     Reads input data from a file or standard input.
     /// </summary>
     /// <param name="inputPath">Path to the input file, or null/"-" for standard input.</param>
     /// <param name="logger">Logger instance.</param>
@@ -616,20 +609,15 @@ Example:
 
         // Validate that the input file exists and is not a flag
         if (inputPath.StartsWith("-", StringComparison.Ordinal))
-        {
             throw new ArgumentException($"Invalid argument: {inputPath}. Did you mean to specify an input file?");
-        }
 
-        if (!File.Exists(inputPath))
-        {
-            throw new FileNotFoundException($"Input file not found: {inputPath}");
-        }
+        if (!File.Exists(inputPath)) throw new FileNotFoundException($"Input file not found: {inputPath}");
 
         return await File.ReadAllBytesAsync(inputPath);
     }
 
     /// <summary>
-    /// Writes output data to a file or standard output.
+    ///     Writes output data to a file or standard output.
     /// </summary>
     /// <param name="data">The data to write.</param>
     /// <param name="outputPath">Path to the output file, or null/"-" for standard output.</param>
@@ -649,17 +637,14 @@ Example:
         {
             // Ensure directory exists
             var directory = Path.GetDirectoryName(outputPath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory)) Directory.CreateDirectory(directory);
 
             await File.WriteAllBytesAsync(outputPath, data);
         }
     }
 
     /// <summary>
-    /// Prompts the user for a passphrase for encryption.
+    ///     Prompts the user for a passphrase for encryption.
     /// </summary>
     private string PromptForPassphrase(ILogger logger)
     {
@@ -673,6 +658,7 @@ Example:
                 passphrase = GenerateSecurePassphrase();
                 logger.LogTrace($"Using autogenerated passphrase: {passphrase}");
             }
+
             return passphrase;
         }
 
@@ -700,21 +686,19 @@ Example:
     }
 
     /// <summary>
-    /// Prompts the user for a passphrase for decryption.
+    ///     Prompts the user for a passphrase for decryption.
     /// </summary>
     private string PromptForDecryptionPassphrase()
     {
         if (Console.IsInputRedirected)
-        {
             // Read the passphrase from stdin (first line)
             return Console.In.ReadLine() ?? string.Empty;
-        }
         Console.Write("Enter passphrase: ");
         return ReadSecret();
     }
 
     /// <summary>
-    /// Generates a secure passphrase using the BIP39 wordlist.
+    ///     Generates a secure passphrase using the BIP39 wordlist.
     /// </summary>
     /// <returns>A secure passphrase consisting of 10 random words from the BIP39 wordlist.</returns>
     private string GenerateSecurePassphrase()
@@ -722,25 +706,22 @@ Example:
         var words = new List<string>(10);
 
         // Generate 10 random words from the BIP39 wordlist (like age does)
-        for (int i = 0; i < 10; i++)
-        {
-            words.Add(Bip39Wordlist.GetRandomWord(null));
-        }
+        for (var i = 0; i < 10; i++) words.Add(Bip39Wordlist.GetRandomWord(null));
 
         return string.Join("-", words);
     }
 
     /// <summary>
-    /// Reads a secret (password/passphrase) from the console without displaying the input.
+    ///     Reads a secret (password/passphrase) from the console without displaying the input.
     /// </summary>
     /// <returns>The secret entered by the user.</returns>
     private string ReadSecret()
     {
-        var passphrase = new StringBuilder(capacity: 32);
+        var passphrase = new StringBuilder(32);
 
         while (true)
         {
-            var keyInfo = Console.ReadKey(intercept: true);
+            var keyInfo = Console.ReadKey(true);
 
             switch (keyInfo.Key)
             {

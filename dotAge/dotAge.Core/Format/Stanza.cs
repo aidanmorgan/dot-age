@@ -1,8 +1,8 @@
 using System.Text;
-using DotAge.Core.Utils;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
+using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Format;
 
@@ -11,7 +11,7 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Stanza
 {
-    private static readonly Lazy<ILogger<Stanza>> _logger = new Lazy<ILogger<Stanza>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<Stanza>());
+    private static readonly Lazy<ILogger<Stanza>> _logger = new(() => LoggerFactory.CreateLogger<Stanza>());
 
     /// <summary>
     ///     Creates a new stanza with the specified type, arguments, and body.
@@ -62,10 +62,8 @@ public class Stanza
 
         var linesList = rawTextLines.ToList();
         _logger.Value.LogTrace("Raw text lines count: {LineCount}", linesList.Count);
-        for (int idx = 0; idx < linesList.Count; idx++)
-        {
+        for (var idx = 0; idx < linesList.Count; idx++)
             _logger.Value.LogTrace("Raw line {Index}: '{Line}'", idx, linesList[idx]);
-        }
 
         var arguments = new List<string>();
         var bodyLines = new List<string>();
@@ -84,7 +82,8 @@ public class Stanza
                 var argsString = firstLine.Substring(type.Length).Trim();
                 var args = argsString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 arguments.AddRange(args);
-                _logger.Value.LogTrace("Extracted arguments from type-prefixed line: {Arguments}", string.Join(", ", args));
+                _logger.Value.LogTrace("Extracted arguments from type-prefixed line: {Arguments}",
+                    string.Join(", ", args));
             }
             else
             {
@@ -92,18 +91,17 @@ public class Stanza
                 // If the first line doesn't start with the type, it contains the arguments
                 var args = firstLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 arguments.AddRange(args);
-                _logger.Value.LogTrace("Extracted arguments from standalone line: {Arguments}", string.Join(", ", args));
+                _logger.Value.LogTrace("Extracted arguments from standalone line: {Arguments}",
+                    string.Join(", ", args));
             }
 
             // The rest of the lines are the body
-            if (linesList.Count > 1) 
+            if (linesList.Count > 1)
             {
                 bodyLines.AddRange(linesList.Skip(1));
                 _logger.Value.LogTrace("Body lines count: {BodyLineCount}", bodyLines.Count);
-                for (int idx = 0; idx < bodyLines.Count; idx++)
-                {
+                for (var idx = 0; idx < bodyLines.Count; idx++)
                     _logger.Value.LogTrace("Body line {Index}: '{Line}'", idx, bodyLines[idx]);
-                }
             }
             else
             {
@@ -126,7 +124,6 @@ public class Stanza
     /// <returns>The encoded stanza as a string.</returns>
     public string Encode()
     {
-
         var sb = new StringBuilder();
 
         // Add the stanza type line
@@ -150,7 +147,7 @@ public class Stanza
             _logger.Value.LogTrace("Body base64 length: {BodyBase64Length} characters", base64.Length);
 
             // Wrap base64 at 64 columns as required by age specification
-            var wrappedBase64 = Base64Utils.WrapBase64(base64, 64);
+            var wrappedBase64 = Base64Utils.WrapBase64(base64);
             sb.Append(wrappedBase64);
             // Add final newline after the body
             sb.Append("\n");

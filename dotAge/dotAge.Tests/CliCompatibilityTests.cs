@@ -1,8 +1,7 @@
 using System.Text;
-using DotAge.Cli;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
-using DotAge.Core.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Tests;
 
@@ -18,7 +17,7 @@ public class CliCompatibilityTests : IDisposable
     public CliCompatibilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("dotage-cli-tests");
-        _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<CliCompatibilityTests>();
+        _logger = LoggerFactory.CreateLogger<CliCompatibilityTests>();
 
         // Validate that external binaries are available
         TestUtils.ValidateExternalBinaries(_logger);
@@ -48,12 +47,15 @@ public class CliCompatibilityTests : IDisposable
 
         // Encrypt with dotage CLI
         var dotageEncryptedFile = Path.Combine(_tempDir, "test1_dotage_encrypted.age");
-        var result = await TestUtils.RunDotAgeAsync($"encrypt -r {publicKeyLine} -o {dotageEncryptedFile} {testDataFile}", null, _logger);
+        var result =
+            await TestUtils.RunDotAgeAsync($"encrypt -r {publicKeyLine} -o {dotageEncryptedFile} {testDataFile}", null,
+                _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Decrypt with age CLI to verify compatibility
         var ageDecryptedFile = Path.Combine(_tempDir, "test1_age_decrypted.txt");
-        var ageResult = await TestUtils.RunAgeAsync($"-d -i {ageKeyFile} -o {ageDecryptedFile} {dotageEncryptedFile}", null, _logger);
+        var ageResult = await TestUtils.RunAgeAsync($"-d -i {ageKeyFile} -o {ageDecryptedFile} {dotageEncryptedFile}",
+            null, _logger);
         if (ageResult.ExitCode != 0)
         {
             _logger.LogError($"Age CLI decryption failed with exit code {ageResult.ExitCode}");
@@ -92,7 +94,9 @@ public class CliCompatibilityTests : IDisposable
 
         // Decrypt with dotage CLI
         var dotageDecryptedFile = Path.Combine(_tempDir, "test2_dotage_decrypted.txt");
-        var result = await TestUtils.RunDotAgeAsync($"decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {ageEncryptedFile}", null, _logger);
+        var result =
+            await TestUtils.RunDotAgeAsync($"decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {ageEncryptedFile}", null,
+                _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Verify the decrypted data matches the original
@@ -124,7 +128,8 @@ public class CliCompatibilityTests : IDisposable
 
         // Encrypt with dotage CLI using multiple recipients
         var dotageEncryptedFile = Path.Combine(_tempDir, "test3_dotage_encrypted.age");
-        var result = await TestUtils.RunDotAgeAsync($"encrypt -r {publicKey1Line} -r {publicKey2Line} -o {dotageEncryptedFile} {testDataFile}", null, _logger);
+        var result = await TestUtils.RunDotAgeAsync(
+            $"encrypt -r {publicKey1Line} -r {publicKey2Line} -o {dotageEncryptedFile} {testDataFile}", null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Decrypt with age CLI using either key
@@ -162,7 +167,9 @@ public class CliCompatibilityTests : IDisposable
 
         // Encrypt with dotage CLI using recipients file
         var dotageEncryptedFile = Path.Combine(_tempDir, "test4_dotage_encrypted.age");
-        var result = await TestUtils.RunDotAgeAsync($"encrypt -R {recipientsFile} -o {dotageEncryptedFile} {testDataFile}", null, _logger);
+        var result =
+            await TestUtils.RunDotAgeAsync($"encrypt -R {recipientsFile} -o {dotageEncryptedFile} {testDataFile}", null,
+                _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Decrypt with age CLI using either key
@@ -205,7 +212,9 @@ public class CliCompatibilityTests : IDisposable
 
         // Encrypt with dotage CLI using mixed recipients
         var dotageEncryptedFile = Path.Combine(_tempDir, "test5_dotage_encrypted.age");
-        var result = await TestUtils.RunDotAgeAsync($"encrypt -r {publicKey1Line} -R {recipientsFile} -r {publicKey3Line} -o {dotageEncryptedFile} {testDataFile}", null, _logger);
+        var result = await TestUtils.RunDotAgeAsync(
+            $"encrypt -r {publicKey1Line} -R {recipientsFile} -r {publicKey3Line} -o {dotageEncryptedFile} {testDataFile}",
+            null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Decrypt with age CLI using any of the keys
@@ -240,12 +249,15 @@ public class CliCompatibilityTests : IDisposable
 
         // Encrypt with dotage CLI using stdin/stdout
         var dotageEncryptedFile = Path.Combine(_tempDir, "test6_dotage_encrypted.age");
-        var result = await TestUtils.RunDotAgeAsync($"encrypt -r {publicKeyLine} -o {dotageEncryptedFile} {testDataFile}", null, _logger);
+        var result =
+            await TestUtils.RunDotAgeAsync($"encrypt -r {publicKeyLine} -o {dotageEncryptedFile} {testDataFile}", null,
+                _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Decrypt with dotage CLI using stdin/stdout
         var dotageDecryptedFile = Path.Combine(_tempDir, "test6_dotage_decrypted.txt");
-        result = await TestUtils.RunDotAgeAsync($"decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {dotageEncryptedFile}", null, _logger);
+        result = await TestUtils.RunDotAgeAsync(
+            $"decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {dotageEncryptedFile}", null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Verify the decrypted data matches the original
@@ -277,11 +289,13 @@ public class CliCompatibilityTests : IDisposable
 
         // Encrypt with age CLI using multiple recipients
         var ageEncryptedFile = Path.Combine(_tempDir, "test7_age_encrypted.age");
-        await TestUtils.RunAgeAsync($"-e -r {publicKey1Line} -r {publicKey2Line} -o {ageEncryptedFile} {testDataFile}", null, _logger);
+        await TestUtils.RunAgeAsync($"-e -r {publicKey1Line} -r {publicKey2Line} -o {ageEncryptedFile} {testDataFile}",
+            null, _logger);
 
         // Decrypt with dotage CLI using multiple identity files
         var dotageDecryptedFile = Path.Combine(_tempDir, "test7_dotage_decrypted.txt");
-        var result = await TestUtils.RunDotAgeAsync($"decrypt -i {key1File} -i {key2File} -o {dotageDecryptedFile} {ageEncryptedFile}", null, _logger);
+        var result = await TestUtils.RunDotAgeAsync(
+            $"decrypt -i {key1File} -i {key2File} -o {dotageDecryptedFile} {ageEncryptedFile}", null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Verify the decrypted data matches the original
@@ -310,7 +324,9 @@ public class CliCompatibilityTests : IDisposable
 
         // Encrypt with dotage CLI using explicit encrypt flag
         var dotageEncryptedFile = Path.Combine(_tempDir, "test8_dotage_encrypted.age");
-        var result = await TestUtils.RunDotAgeAsync($"encrypt --encrypt -r {publicKeyLine} -o {dotageEncryptedFile} {testDataFile}", null, _logger);
+        var result =
+            await TestUtils.RunDotAgeAsync(
+                $"encrypt --encrypt -r {publicKeyLine} -o {dotageEncryptedFile} {testDataFile}", null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Decrypt with age CLI
@@ -347,7 +363,9 @@ public class CliCompatibilityTests : IDisposable
 
         // Decrypt with dotage CLI using explicit decrypt flag
         var dotageDecryptedFile = Path.Combine(_tempDir, "test9_dotage_decrypted.txt");
-        var result = await TestUtils.RunDotAgeAsync($"decrypt --decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {ageEncryptedFile}", null, _logger);
+        var result =
+            await TestUtils.RunDotAgeAsync(
+                $"decrypt --decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {ageEncryptedFile}", null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         // Verify the decrypted data matches the original
@@ -391,7 +409,9 @@ public class CliCompatibilityTests : IDisposable
 
         // Test 1: dotage encrypt -> age decrypt
         var dotageEncryptedFile = Path.Combine(_tempDir, "test12_dotage_encrypted.age");
-        var result = await TestUtils.RunDotAgeAsync($"encrypt -r {agePublicKeyLine} -o {dotageEncryptedFile} {testDataFile}", null, _logger);
+        var result =
+            await TestUtils.RunDotAgeAsync($"encrypt -r {agePublicKeyLine} -o {dotageEncryptedFile} {testDataFile}",
+                null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         var ageDecryptedFile = Path.Combine(_tempDir, "test12_age_decrypted.txt");
@@ -401,11 +421,13 @@ public class CliCompatibilityTests : IDisposable
 
         // Test 2: dotage encrypt -> rage decrypt
         var dotageEncryptedFile2 = Path.Combine(_tempDir, "test12_dotage_encrypted2.age");
-        result = await TestUtils.RunDotAgeAsync($"encrypt -r {ragePublicKeyLine} -o {dotageEncryptedFile2} {testDataFile}", null, _logger);
+        result = await TestUtils.RunDotAgeAsync(
+            $"encrypt -r {ragePublicKeyLine} -o {dotageEncryptedFile2} {testDataFile}", null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         var rageDecryptedFile = Path.Combine(_tempDir, "test12_rage_decrypted.txt");
-        await TestUtils.RunRageAsync($"-d -i {rageKeyFile} -o {rageDecryptedFile} {dotageEncryptedFile2}", null, _logger);
+        await TestUtils.RunRageAsync($"-d -i {rageKeyFile} -o {rageDecryptedFile} {dotageEncryptedFile2}", null,
+            _logger);
         decryptedData = File.ReadAllBytes(rageDecryptedFile);
         Assert.Equal(testData, decryptedData);
 
@@ -414,7 +436,8 @@ public class CliCompatibilityTests : IDisposable
         await TestUtils.RunAgeAsync($"-e -r {agePublicKeyLine} -o {ageEncryptedFile} {testDataFile}", null, _logger);
 
         var dotageDecryptedFile = Path.Combine(_tempDir, "test12_dotage_decrypted.txt");
-        result = await TestUtils.RunDotAgeAsync($"decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {ageEncryptedFile}", null, _logger);
+        result = await TestUtils.RunDotAgeAsync($"decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {ageEncryptedFile}",
+            null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         decryptedData = File.ReadAllBytes(dotageDecryptedFile);
@@ -425,7 +448,8 @@ public class CliCompatibilityTests : IDisposable
         await TestUtils.RunRageAsync($"-e -r {ragePublicKeyLine} -o {rageEncryptedFile} {testDataFile}", null, _logger);
 
         var dotageDecryptedFile2 = Path.Combine(_tempDir, "test12_dotage_decrypted2.txt");
-        result = await TestUtils.RunDotAgeAsync($"decrypt -i {rageKeyFile} -o {dotageDecryptedFile2} {rageEncryptedFile}", null, _logger);
+        result = await TestUtils.RunDotAgeAsync(
+            $"decrypt -i {rageKeyFile} -o {dotageDecryptedFile2} {rageEncryptedFile}", null, _logger);
         Assert.Equal(0, result.ExitCode);
 
         decryptedData = File.ReadAllBytes(dotageDecryptedFile2);

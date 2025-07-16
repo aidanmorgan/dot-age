@@ -1,47 +1,19 @@
-using System;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Utils;
 
 /// <summary>
-/// Provides the BIP39 wordlist used for passphrase generation.
+///     Provides the BIP39 wordlist used for passphrase generation.
 /// </summary>
 public static class Bip39Wordlist
 {
-    private static readonly ILogger _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Bip39Wordlist));
+    private static readonly ILogger _logger = LoggerFactory.CreateLogger(nameof(Bip39Wordlist));
+
+    private static readonly Random _random = new();
 
     /// <summary>
-    /// Gets the length of the BIP39 wordlist.
-    /// </summary>
-    public static int Length => Words.Length;
-
-    private static readonly Random _random = new Random();
-
-    /// <summary>
-    /// Gets a word from the BIP39 wordlist at the specified index.
-    /// </summary>
-    /// <param name="index">The index of the word to get.</param>
-    /// <returns>The word at the specified index.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when the index is out of range.</exception>
-    public static string GetWord(int index)
-    {
-        if (index < 0 || index >= Words.Length)
-        {
-            throw new ArgumentOutOfRangeException(nameof(index), "Index is out of range");
-        }
-
-        var word = Words[index];
-        return word;
-    }
-
-    public static string GetRandomWord(Random? rng)
-    {
-        return GetWord((rng ??_random).Next(Words.Length));
-    }
-
-    /// <summary>
-    /// The BIP39 wordlist (2048 words) - same as used by age.
+    ///     The BIP39 wordlist (2048 words) - same as used by age.
     /// </summary>
     private static readonly string[] Words =
     {
@@ -252,4 +224,29 @@ public static class Bip39Wordlist
         "wrist", "write", "wrong", "yard", "year", "yellow", "you", "young", "youth", "zebra",
         "zero", "zone", "zoo"
     };
+
+    /// <summary>
+    ///     Gets the length of the BIP39 wordlist.
+    /// </summary>
+    public static int Length => Words.Length;
+
+    /// <summary>
+    ///     Gets a word from the BIP39 wordlist at the specified index.
+    /// </summary>
+    /// <param name="index">The index of the word to get.</param>
+    /// <returns>The word at the specified index.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the index is out of range.</exception>
+    public static string GetWord(int index)
+    {
+        if (index < 0 || index >= Words.Length)
+            throw new ArgumentOutOfRangeException(nameof(index), "Index is out of range");
+
+        var word = Words[index];
+        return word;
+    }
+
+    public static string GetRandomWord(Random? rng)
+    {
+        return GetWord((rng ?? _random).Next(Words.Length));
+    }
 }

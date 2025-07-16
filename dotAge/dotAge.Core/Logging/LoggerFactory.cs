@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using System.IO;
 
 namespace DotAge.Core.Logging;
 
@@ -81,14 +80,18 @@ public class FilteredConsoleLogger : ILogger
         _categoryName = categoryName;
     }
 
-    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+    {
+        return null;
+    }
 
     public bool IsEnabled(LogLevel logLevel)
     {
         return logLevel >= LogLevel.Information; // Only Info and above
     }
 
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+        Func<TState, Exception?, string> formatter)
     {
         if (!IsEnabled(logLevel))
             return;
@@ -97,7 +100,7 @@ public class FilteredConsoleLogger : ILogger
         var level = logLevel.ToString().ToUpperInvariant();
         var message = formatter(state, exception);
         var logEntry = $"{timestamp} [{level}] {_categoryName}: {message}";
-        
+
         Console.WriteLine(logEntry);
     }
 }
@@ -108,7 +111,7 @@ public class FilteredConsoleLogger : ILogger
 public class FileLoggerProvider : ILoggerProvider
 {
     private readonly string _filePath;
-    private readonly object _lock = new object();
+    private readonly object _lock = new();
 
     public FileLoggerProvider(string filePath)
     {
@@ -131,8 +134,8 @@ public class FileLoggerProvider : ILoggerProvider
 /// </summary>
 public class FileLogger : ILogger
 {
-    private readonly string _filePath;
     private readonly string _categoryName;
+    private readonly string _filePath;
     private readonly object _lock;
 
     public FileLogger(string filePath, string categoryName, object lockObj)
@@ -142,14 +145,18 @@ public class FileLogger : ILogger
         _lock = lockObj;
     }
 
-    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+    {
+        return null;
+    }
 
     public bool IsEnabled(LogLevel logLevel)
     {
         return true; // Allow all log levels
     }
 
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+        Func<TState, Exception?, string> formatter)
     {
         lock (_lock)
         {
@@ -157,7 +164,7 @@ public class FileLogger : ILogger
             var level = logLevel.ToString().ToUpperInvariant();
             var message = formatter(state, exception);
             var logEntry = $"{timestamp} [{level}] {_categoryName}: {message}";
-            
+
             File.AppendAllText(_filePath, logEntry + Environment.NewLine);
         }
     }

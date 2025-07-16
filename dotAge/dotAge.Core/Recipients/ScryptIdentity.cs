@@ -4,8 +4,9 @@ using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
 using DotAge.Core.Utils;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
+using ChaCha20Poly1305 = DotAge.Core.Crypto.ChaCha20Poly1305;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Recipients;
 
@@ -14,35 +15,40 @@ namespace DotAge.Core.Recipients;
 /// </summary>
 public class ScryptIdentity : IRecipient
 {
-    private static readonly Lazy<ILogger<ScryptIdentity>> Logger = new Lazy<ILogger<ScryptIdentity>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<ScryptIdentity>());
-
     private const int DefaultMaxWorkFactor = 22; // Default max work factor for decryption
     private const int MaxWorkFactor = 30; // Match Go's SetWorkFactor range (1-30)
     private const string ScryptLabel = "age-encryption.org/v1/scrypt";
 
-    private readonly string _passphrase;
+    private static readonly Lazy<ILogger<ScryptIdentity>> Logger = new(() =>
+        LoggerFactory.CreateLogger<ScryptIdentity>());
+
     private readonly int _maxWorkFactor;
+
+    private readonly string _passphrase;
 
     public ScryptIdentity(string passphrase)
     {
         if (string.IsNullOrEmpty(passphrase)) throw new AgeKeyException("Passphrase cannot be null or empty");
-        
+
         _passphrase = passphrase;
         _maxWorkFactor = DefaultMaxWorkFactor;
-        
-        Logger.Value.LogTrace("Created ScryptIdentity with passphrase (length: {PassphraseLength}), max work factor: {MaxWorkFactor}", 
+
+        Logger.Value.LogTrace(
+            "Created ScryptIdentity with passphrase (length: {PassphraseLength}), max work factor: {MaxWorkFactor}",
             passphrase.Length, _maxWorkFactor);
     }
 
     public ScryptIdentity(string passphrase, int maxWorkFactor)
     {
         if (string.IsNullOrEmpty(passphrase)) throw new AgeKeyException("Passphrase cannot be null or empty");
-        if (maxWorkFactor < 1 || maxWorkFactor > MaxWorkFactor) throw new AgeKeyException($"Max work factor must be between 1 and {MaxWorkFactor}");
-        
+        if (maxWorkFactor < 1 || maxWorkFactor > MaxWorkFactor)
+            throw new AgeKeyException($"Max work factor must be between 1 and {MaxWorkFactor}");
+
         _passphrase = passphrase;
         _maxWorkFactor = maxWorkFactor;
-        
-        Logger.Value.LogTrace("Created ScryptIdentity with passphrase (length: {PassphraseLength}), max work factor: {MaxWorkFactor}", 
+
+        Logger.Value.LogTrace(
+            "Created ScryptIdentity with passphrase (length: {PassphraseLength}), max work factor: {MaxWorkFactor}",
             passphrase.Length, _maxWorkFactor);
     }
 
@@ -63,13 +69,11 @@ public class ScryptIdentity : IRecipient
         Logger.Value.LogTrace("Input stanza:");
         Logger.Value.LogTrace("  Type: {Type}", stanza.Type);
         Logger.Value.LogTrace("  Arguments count: {ArgumentCount}", stanza.Arguments.Count);
-        for (int i = 0; i < stanza.Arguments.Count; i++)
-        {
+        for (var i = 0; i < stanza.Arguments.Count; i++)
             Logger.Value.LogTrace("  Argument {Index}: '{Value}'", i, stanza.Arguments[i]);
-        }
         Logger.Value.LogTrace("  Body length: {BodyLength} bytes", stanza.Body.Length);
 
-        Logger.Value.LogTrace("Unwrapping key from stanza with {ArgumentCount} arguments and {BodyLength} bytes body", 
+        Logger.Value.LogTrace("Unwrapping key from stanza with {ArgumentCount} arguments and {BodyLength} bytes body",
             stanza.Arguments.Count, stanza.Body.Length);
 
         // Extract the salt and work factor
@@ -105,11 +109,13 @@ public class ScryptIdentity : IRecipient
 
         if (workFactor > _maxWorkFactor)
         {
-            Logger.Value.LogTrace("Work factor exceeds maximum: {WorkFactor} > {MaxWorkFactor}", workFactor, _maxWorkFactor);
+            Logger.Value.LogTrace("Work factor exceeds maximum: {WorkFactor} > {MaxWorkFactor}", workFactor,
+                _maxWorkFactor);
             return null; // Work factor too large
         }
 
-        Logger.Value.LogTrace("Work factor validation passed: {WorkFactor} (max: {MaxWorkFactor})", workFactor, _maxWorkFactor);
+        Logger.Value.LogTrace("Work factor validation passed: {WorkFactor} (max: {MaxWorkFactor})", workFactor,
+            _maxWorkFactor);
 
         var wrappedKey = stanza.Body;
         Logger.Value.LogTrace("Extracted wrapped key length: {WrappedKeyLength} bytes", wrappedKey.Length);
@@ -132,17 +138,18 @@ public class ScryptIdentity : IRecipient
         Logger.Value.LogTrace("  Passphrase length: {PassphraseLength} characters", _passphrase.Length);
         Logger.Value.LogTrace("  Labeled salt length: {LabeledSaltLength} bytes", labeledSalt.Length);
         Logger.Value.LogTrace("  Work factor: {WorkFactor}", workFactor);
-        var wrappingKey = DotAge.Core.Crypto.Scrypt.DeriveKey(_passphrase, labeledSalt, workFactor, DotAge.Core.Crypto.Scrypt.DefaultR, DotAge.Core.Crypto.Scrypt.DefaultP, 32);
+        var wrappingKey = Scrypt.DeriveKey(_passphrase, labeledSalt, workFactor, Scrypt.DefaultR);
         Logger.Value.LogTrace("Derived wrapping key length: {WrappingKeyLength} bytes", wrappingKey.Length);
 
         // Decrypt the wrapped key
         try
         {
-            var nonce = new byte[DotAge.Core.Crypto.ChaCha20Poly1305.NonceSize]; // All zeros
+            var nonce = new byte[ChaCha20Poly1305.NonceSize]; // All zeros
             Logger.Value.LogTrace("Using zero nonce length: {NonceLength} bytes", nonce.Length);
 
-            var unwrappedKey = DotAge.Core.Crypto.ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
-            Logger.Value.LogTrace("Successfully unwrapped file key length: {UnwrappedKeyLength} bytes", unwrappedKey.Length);
+            var unwrappedKey = ChaCha20Poly1305.Decrypt(wrappingKey, nonce, wrappedKey);
+            Logger.Value.LogTrace("Successfully unwrapped file key length: {UnwrappedKeyLength} bytes",
+                unwrappedKey.Length);
 
             return unwrappedKey;
         }
@@ -168,9 +175,11 @@ public class ScryptIdentity : IRecipient
     public static ScryptIdentity FromPassphrase(string passphrase, int maxWorkFactor = 22)
     {
         if (string.IsNullOrEmpty(passphrase)) throw new AgeKeyException("Passphrase cannot be null or empty");
-        if (maxWorkFactor < 1 || maxWorkFactor > MaxWorkFactor) throw new AgeKeyException($"Max work factor must be between 1 and {MaxWorkFactor}");
-        
-        Logger.Value.LogTrace("Creating ScryptIdentity from passphrase with max work factor: {MaxWorkFactor}", maxWorkFactor);
+        if (maxWorkFactor < 1 || maxWorkFactor > MaxWorkFactor)
+            throw new AgeKeyException($"Max work factor must be between 1 and {MaxWorkFactor}");
+
+        Logger.Value.LogTrace("Creating ScryptIdentity from passphrase with max work factor: {MaxWorkFactor}",
+            maxWorkFactor);
         return new ScryptIdentity(passphrase, maxWorkFactor);
     }
-} 
+}

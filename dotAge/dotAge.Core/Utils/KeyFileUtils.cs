@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Utils;
 
@@ -10,7 +10,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class KeyFileUtils
 {
-    private static readonly Lazy<ILogger> Logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(KeyFileUtils)));
+    private static readonly Lazy<ILogger> Logger = new(() => LoggerFactory.CreateLogger(nameof(KeyFileUtils)));
 
     private static readonly Regex AgeSecretKeyRegex =
         new(@"^AGE-SECRET-KEY-1[A-Z0-9]+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -49,7 +49,7 @@ public static class KeyFileUtils
             if (trimmedLine.StartsWith("# public key: "))
             {
                 var publicKey = trimmedLine.Substring("# public key: ".Length).Trim();
-                if (AgePublicKeyRegex.IsMatch(publicKey)) 
+                if (AgePublicKeyRegex.IsMatch(publicKey))
                 {
                     publicKeyLine = publicKey;
                     Logger.Value.LogTrace("Found public key in comment: {PublicKey}", publicKey);
@@ -57,10 +57,7 @@ public static class KeyFileUtils
             }
 
             // Skip empty lines and comment lines (matching Go/Rust behavior)
-            if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith("#")) 
-            {
-                continue;
-            }
+            if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith("#")) continue;
 
             // Check for private key (AGE-SECRET-KEY format)
             if (trimmedLine.StartsWith("AGE-SECRET-KEY-", StringComparison.OrdinalIgnoreCase))
@@ -70,6 +67,7 @@ public static class KeyFileUtils
                     Logger.Value.LogTrace("Multiple private keys found in key file");
                     throw new AgeKeyException("Multiple private keys found in key file");
                 }
+
                 privateKeyLine = trimmedLine;
                 Logger.Value.LogTrace("Found private key: {PrivateKey}", privateKeyLine);
             }
@@ -83,6 +81,7 @@ public static class KeyFileUtils
                         Logger.Value.LogTrace("Multiple public keys found in key file");
                         throw new AgeKeyException("Multiple public keys found in key file");
                     }
+
                     publicKeyLine = trimmedLine;
                     Logger.Value.LogTrace("Found public key: {PublicKey}", publicKeyLine);
                 }
@@ -106,7 +105,7 @@ public static class KeyFileUtils
             throw new AgeKeyException("Public key not found in the key file.");
         }
 
-        Logger.Value.LogTrace("Successfully parsed key file - Private: {PrivateKey}, Public: {PublicKey}", 
+        Logger.Value.LogTrace("Successfully parsed key file - Private: {PrivateKey}, Public: {PublicKey}",
             privateKeyLine, publicKeyLine);
 
         return (privateKeyLine, publicKeyLine);

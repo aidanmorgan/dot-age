@@ -1,7 +1,7 @@
 using System.Text;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Utils;
 
@@ -10,7 +10,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class Base64Utils
 {
-    private static readonly ILogger Logger = DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Base64Utils));
+    private static readonly ILogger Logger = LoggerFactory.CreateLogger(nameof(Base64Utils));
 
     /// <summary>
     ///     Encodes bytes to unpadded base64 string (equivalent to base64.RawStdEncoding in Go).
@@ -78,7 +78,7 @@ public static class Base64Utils
         if (columnsPerLine <= 0)
             throw new AgeFormatException("columnsPerLine must be positive");
 
-        Logger.LogTrace("Wrapping base64 string of length {Base64Length} at {ColumnsPerLine} columns per line", 
+        Logger.LogTrace("Wrapping base64 string of length {Base64Length} at {ColumnsPerLine} columns per line",
             base64.Length, columnsPerLine);
 
         var sb = new StringBuilder();

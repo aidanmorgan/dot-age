@@ -29,4 +29,4 @@ public class AgeEncryptionException : AgeException
     public AgeEncryptionException(string message, Exception innerException) : base(message, innerException)
     {
     }
-} 
+}

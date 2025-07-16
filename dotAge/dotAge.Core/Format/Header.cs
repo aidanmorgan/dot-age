@@ -1,9 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
-using DotAge.Core.Utils;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
+using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Format;
 
@@ -12,10 +12,9 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Header
 {
-    private static readonly Lazy<ILogger<Header>> _logger = new Lazy<ILogger<Header>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<Header>());
-
     // The age file format version
     public const string Version = "age-encryption.org/v1";
+    private static readonly Lazy<ILogger<Header>> _logger = new(() => LoggerFactory.CreateLogger<Header>());
 
     /// <summary>
     ///     Creates a new header with the specified recipient stanzas.
@@ -45,7 +44,7 @@ public class Header
         sb.Append("\n");
 
         // Add the recipient stanzas
-        foreach (var stanza in Stanzas) 
+        foreach (var stanza in Stanzas)
         {
             var stanzaEncoded = stanza.Encode();
             sb.Append(stanzaEncoded);
@@ -76,7 +75,7 @@ public class Header
         sb.Append("\n");
 
         // Add the recipient stanzas
-        foreach (var stanza in Stanzas) 
+        foreach (var stanza in Stanzas)
         {
             var stanzaEncoded = stanza.Encode();
             sb.Append(stanzaEncoded);
@@ -91,9 +90,9 @@ public class Header
             if (Mac.Length != 32)
                 throw new AgeFormatException(
                     $"MAC must be 32 bytes (got {Mac.Length}) for age/rage compatibility");
-            
+
             _logger.Value.LogTrace("MAC value length: {MacLength} bytes", Mac.Length);
-            
+
             // Use canonical unpadded base64
             var macBase64 = Base64Utils.EncodeToString(Mac);
             sb.Append($"--- {macBase64}\n");
@@ -126,7 +125,7 @@ public class Header
         sb.Append("\n");
 
         // Add the recipient stanzas (excluding grease stanzas)
-        foreach (var stanza in Stanzas) 
+        foreach (var stanza in Stanzas)
         {
             // Skip grease stanzas for MAC calculation
             if (stanza.Type.EndsWith("-grease", StringComparison.Ordinal))
@@ -134,10 +133,11 @@ public class Header
                 _logger.Value.LogTrace("Skipping grease stanza of type {StanzaType} for MAC calculation", stanza.Type);
                 continue;
             }
-            
+
             var stanzaEncoded = stanza.Encode();
             sb.Append(stanzaEncoded);
-            _logger.Value.LogTrace("Added stanza of type {StanzaType} for MAC calculation: {StanzaEncoded}", stanza.Type, stanzaEncoded);
+            _logger.Value.LogTrace("Added stanza of type {StanzaType} for MAC calculation: {StanzaEncoded}",
+                stanza.Type, stanzaEncoded);
         }
 
         // Add the MAC prefix (without the MAC value) - no newline as per age spec
@@ -171,7 +171,8 @@ public class Header
         // Calculate HMAC-SHA-256 over the header up to and including "---" (excluding grease stanzas)
         var headerWithoutMacAndGrease = EncodeWithoutMacAndGrease();
         var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMacAndGrease);
-        _logger.Value.LogTrace("Header bytes for MAC calculation (excluding grease): {HeaderBytesLength} bytes", headerBytes.Length);
+        _logger.Value.LogTrace("Header bytes for MAC calculation (excluding grease): {HeaderBytesLength} bytes",
+            headerBytes.Length);
 
         using var hmac = new HMACSHA256(macKey);
         Mac = hmac.ComputeHash(headerBytes);
@@ -201,7 +202,8 @@ public class Header
         // Calculate HMAC-SHA-256 over the header up to and including "---" (excluding grease stanzas)
         var headerWithoutMacAndGrease = EncodeWithoutMacAndGrease();
         var headerBytes = Encoding.ASCII.GetBytes(headerWithoutMacAndGrease);
-        _logger.Value.LogTrace("Header bytes for MAC calculation (excluding grease): {HeaderBytesLength} bytes", headerBytes.Length);
+        _logger.Value.LogTrace("Header bytes for MAC calculation (excluding grease): {HeaderBytesLength} bytes",
+            headerBytes.Length);
 
         using var hmac = new HMACSHA256(macKey);
         var mac = hmac.ComputeHash(headerBytes);
@@ -267,12 +269,10 @@ public class Header
                 if (stanzaType.EndsWith("-grease", StringComparison.Ordinal))
                 {
                     _logger.Value.LogTrace("Skipping grease stanza of type: {StanzaType}", stanzaType);
-                    
+
                     // Skip the body lines of this grease stanza
-                    while (i + 1 < lines.Length && !lines[i + 1].StartsWith("->") && !lines[i + 1].StartsWith("---"))
-                    {
-                        i++;
-                    }
+                    while (i + 1 < lines.Length && !lines[i + 1].StartsWith("->") &&
+                           !lines[i + 1].StartsWith("---")) i++;
                     continue;
                 }
 
@@ -281,7 +281,7 @@ public class Header
                 while (i + 1 < lines.Length && !lines[i + 1].StartsWith("->") && !lines[i + 1].StartsWith("---"))
                 {
                     i++;
-                    if (!string.IsNullOrEmpty(lines[i])) 
+                    if (!string.IsNullOrEmpty(lines[i]))
                         bodyLines.Add(lines[i]);
                 }
 

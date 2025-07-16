@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Utils;
 
@@ -10,7 +10,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class RandomUtils
 {
-    private static readonly Lazy<ILogger> Logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(RandomUtils)));
+    private static readonly Lazy<ILogger> Logger = new(() => LoggerFactory.CreateLogger(nameof(RandomUtils)));
 
     /// <summary>
     ///     Generates cryptographically secure random bytes.
@@ -42,4 +42,4 @@ public static class RandomUtils
         var salt = GenerateRandomBytes(saltLength);
         return salt;
     }
-} 
+}

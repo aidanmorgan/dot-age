@@ -1,9 +1,8 @@
-using System.Security.Cryptography;
 using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Format;
 
@@ -13,7 +12,7 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Payload
 {
-    private static readonly Lazy<ILogger<Payload>> _logger = new Lazy<ILogger<Payload>>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger<Payload>());
+    private static readonly Lazy<ILogger<Payload>> _logger = new(() => LoggerFactory.CreateLogger<Payload>());
 
     /// <summary>
     ///     Initializes a new payload with the given file key.
@@ -23,7 +22,7 @@ public class Payload
     {
         if (fileKey == null || fileKey.Length != 16)
             throw new AgeKeyException("File key must be 16 bytes");
-        
+
         FileKey = fileKey;
         _logger.Value.LogTrace("Created payload with file key length: {FileKeyLength} bytes", fileKey.Length);
         _logger.Value.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
@@ -36,7 +35,8 @@ public class Payload
 
     /// <summary>
     ///     Creates a writer for encrypting data to the payload.
-    ///     Reference: https://github.com/FiloSottile/age/blob/main/age.go#L98 and https://github.com/str4d/rage/blob/master/age-core/src/format.rs
+    ///     Reference: https://github.com/FiloSottile/age/blob/main/age.go#L98 and
+    ///     https://github.com/str4d/rage/blob/master/age-core/src/format.rs
     /// </summary>
     /// <param name="destination">The destination stream.</param>
     /// <returns>A stream writer that encrypts data using the chunked encryption scheme.</returns>
@@ -62,7 +62,8 @@ public class Payload
 
     /// <summary>
     ///     Creates a reader for decrypting data from the payload.
-    ///     Reference: https://github.com/FiloSottile/age/blob/main/age.go#L209 and https://github.com/str4d/rage/blob/master/age-core/src/format.rs
+    ///     Reference: https://github.com/FiloSottile/age/blob/main/age.go#L209 and
+    ///     https://github.com/str4d/rage/blob/master/age-core/src/format.rs
     /// </summary>
     /// <param name="source">The source stream.</param>
     /// <returns>A stream reader that decrypts data using the chunked encryption scheme.</returns>
@@ -135,14 +136,16 @@ public class Payload
 
             var result = memoryStream.ToArray();
             _logger.Value.LogTrace("Decrypted data: {ResultLength} bytes", result.Length);
-            _logger.Value.LogTrace("Decrypted data (first 64 bytes): {ResultPrefix}", BitConverter.ToString(result.Take(64).ToArray()));
+            _logger.Value.LogTrace("Decrypted data (first 64 bytes): {ResultPrefix}",
+                BitConverter.ToString(result.Take(64).ToArray()));
             return result;
         }
     }
 
     /// <summary>
     ///     Derives the stream key from file key and nonce using HKDF, matching age implementation exactly.
-    ///     Reference: https://github.com/FiloSottile/age/blob/main/age.go#L112 and https://github.com/str4d/rage/blob/master/age-core/src/format.rs
+    ///     Reference: https://github.com/FiloSottile/age/blob/main/age.go#L112 and
+    ///     https://github.com/str4d/rage/blob/master/age-core/src/format.rs
     /// </summary>
     /// <param name="fileKey">The file key (16 bytes).</param>
     /// <param name="nonce">The stream nonce (16 bytes).</param>

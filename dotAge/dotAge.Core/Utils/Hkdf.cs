@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Utils;
 
@@ -10,7 +10,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class Hkdf
 {
-    private static readonly Lazy<ILogger> _logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Hkdf)));
+    private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger(nameof(Hkdf)));
 
     /// <summary>
     ///     Derives a key using HKDF (HMAC-based Key Derivation Function).
@@ -42,6 +42,7 @@ public static class Hkdf
         {
             prk = hmac.ComputeHash(ikm);
         }
+
         _logger.Value.LogTrace("PRK (Pseudo-Random Key) length: {PrkLength} bytes", prk.Length);
         _logger.Value.LogTrace("PRK: {Prk}", BitConverter.ToString(prk));
 
@@ -59,30 +60,32 @@ public static class Hkdf
 
     /// <summary>
     ///     HKDF-Expand step (RFC 5869), matching Go/rust reference implementations.
-    ///     See: https://github.com/FiloSottile/age/blob/main/internal/stream/stream.go and https://github.com/str4d/rage/blob/master/age-core/src/primitives.rs
+    ///     See: https://github.com/FiloSottile/age/blob/main/internal/stream/stream.go and
+    ///     https://github.com/str4d/rage/blob/master/age-core/src/primitives.rs
     /// </summary>
     private static byte[] Expand(byte[] prk, byte[] info, int length)
     {
         // RFC 5869: N = ceil(length / HashLen)
-        int hashLen = 32; // SHA-256 output size
-        int n = (int)Math.Ceiling((double)length / hashLen);
+        var hashLen = 32; // SHA-256 output size
+        var n = (int)Math.Ceiling((double)length / hashLen);
         if (n > 255) throw new ArgumentException("Cannot expand to more than 255 blocks of hash length");
-        byte[] okm = new byte[length];
-        byte[] previous = Array.Empty<byte>();
-        int offset = 0;
+        var okm = new byte[length];
+        var previous = Array.Empty<byte>();
+        var offset = 0;
         using var hmac = new HMACSHA256(prk);
-        for (int i = 1; i <= n; i++)
+        for (var i = 1; i <= n; i++)
         {
             // T(i) = HMAC-Hash(PRK, T(i-1) | info | i)
-            byte[] input = new byte[previous.Length + info.Length + 1];
+            var input = new byte[previous.Length + info.Length + 1];
             Buffer.BlockCopy(previous, 0, input, 0, previous.Length);
             Buffer.BlockCopy(info, 0, input, previous.Length, info.Length);
             input[input.Length - 1] = (byte)i;
             previous = hmac.ComputeHash(input);
-            int toCopy = Math.Min(hashLen, length - offset);
+            var toCopy = Math.Min(hashLen, length - offset);
             Buffer.BlockCopy(previous, 0, okm, offset, toCopy);
             offset += toCopy;
         }
+
         return okm;
     }
 }

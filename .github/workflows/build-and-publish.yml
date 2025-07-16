@@ -53,24 +53,24 @@ jobs:
         # Debug: Show current directory and file existence
         echo "Current directory: $(pwd)"
         echo "Checking if nuspec file exists:"
-        ls -la dotAge/DotAge.Core/DotAge.Core.nuspec || echo "File not found!"
+        ls -la DotAge/DotAge.Core/DotAge.Core.nuspec || echo "File not found!"
         
         # Update version in nuspec file
         VERSION="${{ env.DOT_AGE_VERSION }}"
         echo "Using version: $VERSION"
-        sed -i "s/<version>.*<\/version>/<version>$VERSION<\/version>/" dotAge/DotAge.Core/DotAge.Core.nuspec
+        sed -i "s/<version>.*<\/version>/<version>$VERSION<\/version>/" DotAge/DotAge.Core/DotAge.Core.nuspec
         echo "Updated nuspec version to $VERSION"
         
         # Verify the update
         echo "Verifying nuspec file:"
-        grep "<version>" dotAge/DotAge.Core/DotAge.Core.nuspec
+        grep "<version>" DotAge/DotAge.Core/DotAge.Core.nuspec
 
     - name: Update VersionInfo.cs
       run: |
         # Debug: Show current directory and file existence
         echo "Current directory: $(pwd)"
         echo "Checking if VersionInfo.cs file exists:"
-        ls -la dotAge/DotAge.Core/VersionInfo.cs || echo "File not found!"
+        ls -la DotAge/DotAge.Core/VersionInfo.cs || echo "File not found!"
         
         # Set variables for clarity
         VERSION="${{ env.DOT_AGE_SEMVER }}"
@@ -84,7 +84,7 @@ jobs:
         echo "Using commit hash: $COMMIT_HASH"
         
         # Update VersionInfo.cs with version information
-        cat > dotAge/DotAge.Core/VersionInfo.cs << EOF
+        cat > DotAge/DotAge.Core/VersionInfo.cs << EOF
         namespace DotAge.Core;
 
         /// <summary>

@@ -1,12 +1,10 @@
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+using DotAge.Cli;
 using DotAge.Core;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
-using DotAge.KeyGen;
 using Microsoft.Extensions.Logging;
-using DotAge.Core.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Tests;
 
@@ -17,9 +15,9 @@ namespace DotAge.Tests;
 public class AgeCompatibilityTests : IDisposable
 {
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(30);
-    private static readonly DotAge.Cli.Program _cli = new DotAge.Cli.Program();
-    private static readonly DotAge.KeyGen.Program _keyGen = new DotAge.KeyGen.Program();
-    
+    private static readonly Program _cli = new();
+    private static readonly KeyGen.Program _keyGen = new();
+
     private readonly ILogger _logger;
     private readonly string _tempDir;
 
@@ -31,7 +29,7 @@ public class AgeCompatibilityTests : IDisposable
     public AgeCompatibilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("dotage-age-tests");
-        _logger = DotAge.Core.Logging.LoggerFactory.CreateLogger<AgeCompatibilityTests>();
+        _logger = LoggerFactory.CreateLogger<AgeCompatibilityTests>();
     }
 
     public void Dispose()

@@ -1,7 +1,7 @@
-using DotAge.Core.Format;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
+using DotAge.Core.Format;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Utils;
 
@@ -10,7 +10,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class ValidationUtils
 {
-    private static readonly Lazy<ILogger> Logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(ValidationUtils)));
+    private static readonly Lazy<ILogger> Logger = new(() => LoggerFactory.CreateLogger(nameof(ValidationUtils)));
 
     /// <summary>
     ///     Validates a file key.
@@ -25,7 +25,7 @@ public static class ValidationUtils
         Logger.Value.LogTrace("Validating file key of length {FileKeyLength}", fileKey.Length);
 
         if (fileKey.Length == 16) return;
-        
+
         Logger.Value.LogTrace("File key validation failed: expected 16 bytes, got {FileKeyLength}", fileKey.Length);
         throw new AgeKeyException("File key must be 16 bytes");
     }
@@ -41,24 +41,25 @@ public static class ValidationUtils
     public static void ValidateStanza(Stanza stanza, string expectedType, int expectedArgumentCount)
     {
         ArgumentNullException.ThrowIfNull(stanza);
-        
+
         if (!string.Equals(stanza.Type, expectedType, StringComparison.Ordinal))
         {
-            Logger.Value.LogTrace("Stanza type validation failed: expected '{ExpectedType}', got '{StanzaType}'", 
+            Logger.Value.LogTrace("Stanza type validation failed: expected '{ExpectedType}', got '{StanzaType}'",
                 expectedType, stanza.Type);
             throw new AgeFormatException($"Expected stanza type '{expectedType}', got '{stanza.Type}'");
         }
 
         if (stanza.Arguments.Count != expectedArgumentCount)
         {
-            Logger.Value.LogTrace("Stanza argument count validation failed: expected {ExpectedArgumentCount}, got {ArgumentCount}", 
+            Logger.Value.LogTrace(
+                "Stanza argument count validation failed: expected {ExpectedArgumentCount}, got {ArgumentCount}",
                 expectedArgumentCount, stanza.Arguments.Count);
             throw new AgeFormatException($"Expected {expectedArgumentCount} arguments, got {stanza.Arguments.Count}");
         }
 
         if (stanza.Body.Length != 0) return;
-        
+
         Logger.Value.LogTrace("Stanza body validation failed: body is empty");
         throw new AgeFormatException("Stanza body cannot be empty");
     }
-} 
+}

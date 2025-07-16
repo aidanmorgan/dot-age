@@ -1,10 +1,7 @@
-using System;
 using System.Text;
-using System.Collections.Generic;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Logging;
 using Microsoft.Extensions.Logging;
-using System.Linq;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core.Utils;
 
@@ -14,7 +11,7 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class Bech32
 {
-    private static readonly Lazy<ILogger> _logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Bech32)));
+    private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger(nameof(Bech32)));
 
     private static readonly string Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
     private static readonly uint[] Generator = { 0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3 };
@@ -38,10 +35,8 @@ public static class Bech32
 
         // Validate HRP
         foreach (var c in hrp)
-        {
             if (c < 33 || c > 126)
                 throw new AgeFormatException($"Invalid HRP character: {c}");
-        }
 
         var isLower = hrp.ToLowerInvariant() == hrp;
         var lowerHrp = hrp.ToLowerInvariant();
@@ -51,19 +46,13 @@ public static class Bech32
         ret.Append('1');
 
         // Add data part
-        foreach (var p in values)
-        {
-            ret.Append(Charset[p]);
-        }
+        foreach (var p in values) ret.Append(Charset[p]);
 
         // Add checksum
         var checksum = CreateChecksum(lowerHrp, values);
         _logger.Value.LogTrace("Generated checksum: {ChecksumHex}", BitConverter.ToString(checksum));
 
-        foreach (var p in checksum)
-        {
-            ret.Append(Charset[p]);
-        }
+        foreach (var p in checksum) ret.Append(Charset[p]);
 
         var result = isLower ? ret.ToString() : ret.ToString().ToUpperInvariant();
 
@@ -100,10 +89,8 @@ public static class Bech32
 
         // Validate HRP characters
         foreach (var c in hrp)
-        {
             if (c < 33 || c > 126)
                 throw new AgeFormatException($"Invalid character in human-readable part: {c}");
-        }
 
         var lowerS = s.ToLowerInvariant();
         var data = new List<byte>();
@@ -117,6 +104,7 @@ public static class Bech32
                 _logger.Value.LogTrace("Invalid character in data part: {Char}", lowerS[i]);
                 throw new AgeFormatException($"Invalid character in data part: {lowerS[i]}");
             }
+
             data.Add((byte)d);
         }
 
@@ -151,10 +139,7 @@ public static class Bech32
             for (var i = 0; i < 5; i++)
             {
                 var bit = (top >> i) & 1;
-                if (bit == 1)
-                {
-                    chk ^= Generator[i];
-                }
+                if (bit == 1) chk ^= Generator[i];
             }
         }
 
@@ -169,16 +154,10 @@ public static class Bech32
         var h = hrp.ToLowerInvariant();
         var ret = new List<byte>();
 
-        foreach (var c in h)
-        {
-            ret.Add((byte)(c >> 5));
-        }
+        foreach (var c in h) ret.Add((byte)(c >> 5));
         ret.Add(0);
 
-        foreach (var c in h)
-        {
-            ret.Add((byte)(c & 31));
-        }
+        foreach (var c in h) ret.Add((byte)(c & 31));
 
         _logger.Value.LogTrace("Expanded HRP: {ExpandedHrpHex}", BitConverter.ToString(ret.ToArray()));
         return ret.ToArray();
@@ -223,17 +202,14 @@ public static class Bech32
     private static byte[]? ConvertBits(byte[] data, byte fromBits, byte toBits, bool pad, int? length = null)
     {
         var ret = new List<byte>();
-        int acc = 0;
-        int bits = 0;
-        int maxv = (1 << toBits) - 1;
-        int dataLen = length ?? data.Length;
-        for (int i = 0; i < dataLen; i++)
+        var acc = 0;
+        var bits = 0;
+        var maxv = (1 << toBits) - 1;
+        var dataLen = length ?? data.Length;
+        for (var i = 0; i < dataLen; i++)
         {
             int value = data[i];
-            if (value < 0 || (value >> fromBits) != 0)
-            {
-                return null; // Invalid data range
-            }
+            if (value < 0 || value >> fromBits != 0) return null; // Invalid data range
             acc = (acc << fromBits) | value;
             bits += fromBits;
             while (bits >= toBits)
@@ -242,17 +218,16 @@ public static class Bech32
                 ret.Add((byte)((acc >> bits) & maxv));
             }
         }
+
         if (pad)
         {
-            if (bits > 0)
-            {
-                ret.Add((byte)((acc << (toBits - bits)) & maxv));
-            }
+            if (bits > 0) ret.Add((byte)((acc << (toBits - bits)) & maxv));
         }
         else if (bits >= fromBits || ((acc << (toBits - bits)) & maxv) != 0)
         {
             return null;
         }
+
         return ret.ToArray();
     }
 
@@ -261,51 +236,55 @@ public static class Bech32
     {
         // Example: 32 bytes of 0x01 should convert to 52 bytes of 0x08 (5-bit)
         var input = new byte[32];
-        for (int i = 0; i < 32; i++) input[i] = 0x01;
-        
+        for (var i = 0; i < 32; i++) input[i] = 0x01;
+
         // Debug: Let's trace through the first few bytes manually
         Console.WriteLine("Manual trace:");
-        int acc = 0;
-        int bits = 0;
-        int maxv = 31; // 5 bits = 31
-        int count = 0;
-        
-        for (int i = 0; i < 5; i++) // Just first 5 bytes
+        var acc = 0;
+        var bits = 0;
+        var maxv = 31; // 5 bits = 31
+        var count = 0;
+
+        for (var i = 0; i < 5; i++) // Just first 5 bytes
         {
-            byte value = input[i]; // 0x01
+            var value = input[i]; // 0x01
             Console.WriteLine($"Input[{i}]: 0x{value:X2}");
             acc = (acc << 8) | value; // acc = (acc << 8) | 0x01
             bits += 8;
             Console.WriteLine($"After adding: acc=0x{acc:X8}, bits={bits}");
-            
+
             while (bits >= 5)
             {
                 bits -= 5;
-                byte result = (byte)((acc >> bits) & maxv);
+                var result = (byte)((acc >> bits) & maxv);
                 Console.WriteLine($"Output[{count}]: 0x{result:X2} (acc >> {bits} & 0x1F)");
                 count++;
             }
         }
-        
+
         // Debug: Let's see what we're actually getting
         var actual = ConvertBits(input, 8, 5, true);
         if (actual == null)
             throw new Exception("ConvertBits returned null");
-            
+
         Console.WriteLine($"Input length: {input.Length}");
         Console.WriteLine($"Actual length: {actual.Length}");
         Console.WriteLine($"First few actual bytes: {string.Join(", ", actual.Take(10).Select(b => $"0x{b:X2}"))}");
-        
-        var expected = new byte[] { 0x08, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20 };
+
+        var expected = new byte[]
+        {
+            0x08, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20,
+            0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20,
+            0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20, 0x80, 0x20
+        };
         Console.WriteLine($"Expected length: {expected.Length}");
         Console.WriteLine($"First few expected bytes: {string.Join(", ", expected.Take(10).Select(b => $"0x{b:X2}"))}");
-        
+
         if (actual.Length != expected.Length)
-            throw new Exception($"ConvertBits test failed: length mismatch - expected {expected.Length}, got {actual.Length}");
-        for (int i = 0; i < expected.Length; i++)
-        {
+            throw new Exception(
+                $"ConvertBits test failed: length mismatch - expected {expected.Length}, got {actual.Length}");
+        for (var i = 0; i < expected.Length; i++)
             if (actual[i] != expected[i])
                 throw new Exception($"ConvertBits test failed at {i}: {actual[i]} != {expected[i]}");
-        }
     }
-} 
+}

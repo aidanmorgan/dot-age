@@ -29,4 +29,4 @@ public class AgeFormatException : AgeException
     public AgeFormatException(string message, Exception innerException) : base(message, innerException)
     {
     }
-} 
+}

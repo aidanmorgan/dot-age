@@ -1,16 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
-using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
-using DotAge.Core.Logging;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Core;
 
@@ -20,10 +14,10 @@ namespace DotAge.Core;
 /// </summary>
 public class Age
 {
-    private static readonly Lazy<ILogger> _logger = new Lazy<ILogger>(() => DotAge.Core.Logging.LoggerFactory.CreateLogger(nameof(Age)));
+    private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger(nameof(Age)));
+    private readonly List<IRecipient> _identities = new();
 
     private readonly List<IRecipient> _recipients = new();
-    private readonly List<IRecipient> _identities = new();
 
     /// <summary>
     ///     Adds a recipient for encryption.
@@ -58,7 +52,8 @@ public class Age
 
         _logger.Value.LogTrace("=== AGE ENCRYPT START ===");
         _logger.Value.LogTrace("Plaintext length: {PlaintextLength} bytes", plaintext.Length);
-        _logger.Value.LogTrace("Plaintext (first 64 bytes): {PlaintextPrefix}", BitConverter.ToString(plaintext.Take(64).ToArray()));
+        _logger.Value.LogTrace("Plaintext (first 64 bytes): {PlaintextPrefix}",
+            BitConverter.ToString(plaintext.Take(64).ToArray()));
 
         // Generate a random file key (16 bytes as per age spec)
         var fileKey = RandomUtils.GenerateRandomBytes(16);
@@ -82,7 +77,8 @@ public class Age
         var encryptedPayload = ms.ToArray();
 
         _logger.Value.LogTrace("Encrypted payload length: {PayloadLength} bytes", encryptedPayload.Length);
-        _logger.Value.LogTrace("Encrypted payload (first 64 bytes): {PayloadPrefix}", BitConverter.ToString(encryptedPayload.Take(64).ToArray()));
+        _logger.Value.LogTrace("Encrypted payload (first 64 bytes): {PayloadPrefix}",
+            BitConverter.ToString(encryptedPayload.Take(64).ToArray()));
 
         // Combine header and payload
         var headerEncoded = header.Encode();
@@ -109,7 +105,8 @@ public class Age
 
         _logger.Value.LogTrace("=== AGE DECRYPT START ===");
         _logger.Value.LogTrace("Ciphertext length: {CiphertextLength} bytes", ciphertext.Length);
-        _logger.Value.LogTrace("Ciphertext (first 64 bytes): {CiphertextPrefix}", BitConverter.ToString(ciphertext.Take(64).ToArray()));
+        _logger.Value.LogTrace("Ciphertext (first 64 bytes): {CiphertextPrefix}",
+            BitConverter.ToString(ciphertext.Take(64).ToArray()));
 
         // Parse header and get payload start position
         var (header, payloadStart) = ParseHeader(ciphertext);
@@ -123,16 +120,21 @@ public class Age
             _logger.Value.LogTrace("Trying identity: {IdentityType}", identity.GetType().Name);
             foreach (var stanza in header.Stanzas)
             {
-                _logger.Value.LogTrace("Processing stanza type: '{StanzaType}' with identity: {IdentityType}", stanza.Type, identity.GetType().Name);
-                
+                _logger.Value.LogTrace("Processing stanza type: '{StanzaType}' with identity: {IdentityType}",
+                    stanza.Type, identity.GetType().Name);
+
                 // Only try to unwrap stanzas that this identity supports
                 if (!identity.SupportsStanzaType(stanza.Type))
                 {
-                    _logger.Value.LogTrace("Skipping stanza type '{StanzaType}' - not supported by identity type '{IdentityType}'", stanza.Type, identity.Type);
+                    _logger.Value.LogTrace(
+                        "Skipping stanza type '{StanzaType}' - not supported by identity type '{IdentityType}'",
+                        stanza.Type, identity.Type);
                     continue;
                 }
-                
-                _logger.Value.LogTrace("Attempting to unwrap stanza type '{StanzaType}' with identity type '{IdentityType}'", stanza.Type, identity.Type);
+
+                _logger.Value.LogTrace(
+                    "Attempting to unwrap stanza type '{StanzaType}' with identity type '{IdentityType}'", stanza.Type,
+                    identity.Type);
                 try
                 {
                     var candidate = identity.UnwrapKey(stanza);
@@ -144,9 +146,12 @@ public class Age
                 }
                 catch (Exception ex)
                 {
-                    _logger.Value.LogTrace(ex, "Failed to unwrap file key with identity {IdentityType} and stanza type {StanzaType}", identity.GetType().Name, stanza.Type);
+                    _logger.Value.LogTrace(ex,
+                        "Failed to unwrap file key with identity {IdentityType} and stanza type {StanzaType}",
+                        identity.GetType().Name, stanza.Type);
                 }
             }
+
             if (fileKey != null)
                 break;
         }
@@ -165,14 +170,16 @@ public class Age
         Buffer.BlockCopy(ciphertext, (int)payloadStart, encryptedPayload, 0, encryptedPayload.Length);
 
         _logger.Value.LogTrace("Encrypted payload length: {PayloadLength} bytes", encryptedPayload.Length);
-        _logger.Value.LogTrace("Encrypted payload (first 64 bytes): {PayloadPrefix}", BitConverter.ToString(encryptedPayload.Take(64).ToArray()));
+        _logger.Value.LogTrace("Encrypted payload (first 64 bytes): {PayloadPrefix}",
+            BitConverter.ToString(encryptedPayload.Take(64).ToArray()));
 
         var payload = new Payload(fileKey);
         using var ms = new MemoryStream(encryptedPayload);
         var decryptedData = payload.DecryptData(ms);
 
         _logger.Value.LogTrace("Decrypted data length: {DecryptedLength} bytes", decryptedData.Length);
-        _logger.Value.LogTrace("Decrypted data (first 64 bytes): {DecryptedPrefix}", BitConverter.ToString(decryptedData.Take(64).ToArray()));
+        _logger.Value.LogTrace("Decrypted data (first 64 bytes): {DecryptedPrefix}",
+            BitConverter.ToString(decryptedData.Take(64).ToArray()));
         _logger.Value.LogTrace("=== AGE DECRYPT END ===");
         return decryptedData;
     }
@@ -242,7 +249,7 @@ public class Age
     /// </summary>
     /// <param name="ciphertext">The ciphertext containing the header.</param>
     /// <returns>A tuple containing the parsed header and the payload start position.</returns>
-    public static (Header Header, long PayloadStart) ParseHeader(byte[] ciphertext)
+    public static (Format.Header Header, long PayloadStart) ParseHeader(byte[] ciphertext)
     {
         if (ciphertext == null) throw new ArgumentNullException(nameof(ciphertext));
 
@@ -252,7 +259,7 @@ public class Age
         // Find the header by searching for the MAC line pattern
         var ciphertextString = Encoding.UTF8.GetString(ciphertext);
         var lines = ciphertextString.Split('\n');
-        
+
         var headerLines = new List<string>();
         var payloadStart = -1L;
         var currentPos = 0L;
@@ -261,7 +268,7 @@ public class Age
         {
             headerLines.Add(line);
             _logger.Value.LogTrace("Read header line: '{Line}'", line);
-            
+
             if (line.StartsWith("---"))
             {
                 // The payload starts after the MAC line (including the newline)
@@ -269,7 +276,7 @@ public class Age
                 _logger.Value.LogTrace("Found MAC line, payload starts at position: {PayloadStart}", payloadStart);
                 break;
             }
-            
+
             currentPos += line.Length + 1; // +1 for the newline
         }
 
