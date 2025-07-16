@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+    <metadata>
+        <!-- The identifier that must be unique within the hosting gallery -->
+        <id>DotAge</id>
+
+        <!-- The package version number that is used when resolving dependencies -->
+        <!-- This version is automatically updated by the GitHub Actions build process -->
+        <version>0.1.0</version>
+
+        <!-- Authors contain text that appears directly on the gallery -->
+        <authors>Aidan Morgan</authors>
+
+        <!-- Owners are displayed in the NuGet Gallery -->
+        <owners>Aidan Morgan</owners>
+
+        <!-- License and project URLs provide links for the gallery -->
+        <license type="expression">MIT</license>
+        <projectUrl>https://github.com/aidanmorgan/dot-age</projectUrl>
+        <repository type="git" url="https://github.com/aidanmorgan/dot-age"/>
+
+
+        <!-- If true, this value prompts the user to accept the license when installing the package. -->
+        <requireLicenseAcceptance>false</requireLicenseAcceptance>
+
+        <!-- Any details about this package. -->
+        <description>.NET implementation of the age encryption system, featuring X25519 key generation,
+            ChaCha20-Poly1305 encryption/decryption, and Scrypt key derivation.
+        </description>
+
+        <!-- Copyright information -->
+        <copyright>Copyright © 2025 DotAge Contributors</copyright>
+
+        <!-- Tags appear in the gallery and can be used for tag searches -->
+        <tags>encryption age cryptography security x25519 chacha20poly1305 scrypt</tags>
+
+        <!-- A readme file to be displayed when the package is installed -->
+        <readme>docs\README.md</readme>
+    </metadata>
+
+    <!-- A section for files that are included in the package -->
+    <files>
+        <!-- Include compiled output -->
+        <file src="bin\Release\net9.0\DotAge.Core.dll" target="lib\net9.0"/>
+        <file src="bin\Release\net9.0\DotAge.Core.pdb" target="lib\net9.0"/>
+        <file src="bin\Release\net9.0\DotAge.Core.xml" target="lib\net9.0"/>
+
+        <!-- Include documentation files -->
+        <file src="..\..\README.md" target="docs\"/>
+        <file src="..\..\LICENSE" target="docs\"/>
+
+    </files>
+</package>
