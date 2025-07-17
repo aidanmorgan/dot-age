@@ -10,7 +10,6 @@ public static class Bip39Wordlist
 {
     private static readonly ILogger _logger = LoggerFactory.CreateLogger(nameof(Bip39Wordlist));
 
-    private static readonly Random _random = new();
 
     /// <summary>
     ///     The BIP39 wordlist (2048 words) - same as used by age.
@@ -247,6 +246,6 @@ public static class Bip39Wordlist
 
     public static string GetRandomWord(Random? rng)
     {
-        return GetWord((rng ?? _random).Next(Words.Length));
+        return GetWord((rng ?? Random.Shared).Next(Words.Length));
     }
 }

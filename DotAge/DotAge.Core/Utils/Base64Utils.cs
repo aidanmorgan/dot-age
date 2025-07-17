@@ -81,15 +81,32 @@ public static class Base64Utils
         Logger.LogTrace("Wrapping base64 string of length {Base64Length} at {ColumnsPerLine} columns per line",
             base64.Length, columnsPerLine);
 
-        var sb = new StringBuilder();
-        for (var i = 0; i < base64.Length; i += columnsPerLine)
+        if (base64.Length <= columnsPerLine)
         {
-            var line = base64.Substring(i, Math.Min(columnsPerLine, base64.Length - i));
-            sb.Append(line);
-            if (i + columnsPerLine < base64.Length) sb.Append('\n');
+            Logger.LogTrace("Base64 string fits in single line, returning as-is");
+            return base64;
         }
 
-        var result = sb.ToString();
+        var lineCount = (base64.Length + columnsPerLine - 1) / columnsPerLine;
+        var totalLength = base64.Length + lineCount - 1; // +1 newline per line except last
+
+        var result = string.Create(totalLength, (base64, columnsPerLine), static (span, state) =>
+        {
+            var (source, columns) = state;
+            var sourceSpan = source.AsSpan();
+            var pos = 0;
+
+            for (var i = 0; i < sourceSpan.Length; i += columns)
+            {
+                var chunkSize = Math.Min(columns, sourceSpan.Length - i);
+                sourceSpan.Slice(i, chunkSize).CopyTo(span.Slice(pos));
+                pos += chunkSize;
+
+                if (i + columns < sourceSpan.Length)
+                    span[pos++] = '\n';
+            }
+        });
+
         Logger.LogTrace("Wrapped base64 result: {ResultLength} characters", result.Length);
         return result;
     }

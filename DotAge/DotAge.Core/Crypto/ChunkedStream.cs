@@ -130,7 +130,7 @@ public static class ChunkedStream
             while (remaining > 0)
             {
                 var toWrite = Math.Min(remaining, ChunkSize - _bufferLength);
-                Buffer.BlockCopy(buffer, bufferOffset, _buffer, _bufferLength, toWrite);
+                buffer.AsSpan(bufferOffset, toWrite).CopyTo(_buffer.AsSpan(_bufferLength));
                 _bufferLength += toWrite;
                 remaining -= toWrite;
                 bufferOffset += toWrite;
@@ -157,7 +157,7 @@ public static class ChunkedStream
                 throw new InvalidOperationException("Internal error: flush called with partial chunk");
 
             var chunkData = new byte[_bufferLength];
-            Buffer.BlockCopy(_buffer, 0, chunkData, 0, _bufferLength);
+            _buffer.AsSpan(0, _bufferLength).CopyTo(chunkData);
             var nonceCopy = (byte[])_nonce.Clone();
 
             if (isLast) SetLastChunkFlag(nonceCopy);
@@ -242,8 +242,8 @@ public static class ChunkedStream
             if (_unreadLength > 0)
             {
                 var toRead = Math.Min(count, _unreadLength);
-                Buffer.BlockCopy(_unread, 0, buffer, offset, toRead);
-                Buffer.BlockCopy(_unread, toRead, _unread, 0, _unreadLength - toRead);
+                _unread.AsSpan(0, toRead).CopyTo(buffer.AsSpan(offset));
+                _unread.AsSpan(toRead, _unreadLength - toRead).CopyTo(_unread.AsSpan(0));
                 _unreadLength -= toRead;
                 totalRead += toRead;
                 offset += toRead;
@@ -255,14 +255,14 @@ public static class ChunkedStream
                 var chunkData = ReadChunkInternal();
                 if (chunkData == null) break;
                 var toRead = Math.Min(count, chunkData.Length);
-                Buffer.BlockCopy(chunkData, 0, buffer, offset, toRead);
+                chunkData.AsSpan(0, toRead).CopyTo(buffer.AsSpan(offset));
                 totalRead += toRead;
                 offset += toRead;
                 count -= toRead;
                 if (toRead < chunkData.Length)
                 {
                     var remaining = chunkData.Length - toRead;
-                    Buffer.BlockCopy(chunkData, toRead, _unread, 0, remaining);
+                    chunkData.AsSpan(toRead, remaining).CopyTo(_unread.AsSpan(0));
                     _unreadLength = remaining;
                 }
             }
@@ -331,7 +331,7 @@ public static class ChunkedStream
             }
 
             var chunkData = new byte[n];
-            Buffer.BlockCopy(_buffer, 0, chunkData, 0, n);
+            _buffer.AsSpan(0, n).CopyTo(chunkData);
 
             // First try with the current nonce (matching Go implementation)
             byte[] decrypted;
