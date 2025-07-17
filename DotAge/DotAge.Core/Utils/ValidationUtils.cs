@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
 using Microsoft.Extensions.Logging;
@@ -16,11 +17,12 @@ public static class ValidationUtils
     ///     Validates a file key.
     /// </summary>
     /// <param name="fileKey">The file key to validate.</param>
+    /// <param name="paramName">The parameter name for exception reporting.</param>
     /// <exception cref="AgeKeyException">Thrown when the file key is invalid.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the file key is null.</exception>
-    public static void ValidateFileKey(byte[] fileKey)
+    public static void ValidateFileKey(byte[]? fileKey, [CallerArgumentExpression(nameof(fileKey))] string? paramName = null)
     {
-        ArgumentNullException.ThrowIfNull(fileKey);
+        ArgumentNullException.ThrowIfNull(fileKey, paramName);
 
         Logger.Value.LogTrace("Validating file key of length {FileKeyLength}", fileKey.Length);
 
@@ -38,9 +40,11 @@ public static class ValidationUtils
     /// <param name="expectedArgumentCount">The expected number of arguments.</param>
     /// <exception cref="ArgumentNullException">Thrown when the stanza is null.</exception>
     /// <exception cref="AgeFormatException">Thrown when the stanza is invalid.</exception>
-    public static void ValidateStanza(Stanza stanza, string expectedType, int expectedArgumentCount)
+    public static void ValidateStanza(Stanza? stanza, string expectedType, int expectedArgumentCount)
     {
         ArgumentNullException.ThrowIfNull(stanza);
+        ArgumentException.ThrowIfNullOrEmpty(expectedType);
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedArgumentCount);
 
         if (!string.Equals(stanza.Type, expectedType, StringComparison.Ordinal))
         {
@@ -61,5 +65,27 @@ public static class ValidationUtils
 
         Logger.Value.LogTrace("Stanza body validation failed: body is empty");
         throw new AgeFormatException("Stanza body cannot be empty");
+    }
+
+    /// <summary>
+    ///     Validates that a string parameter is not null or empty using modern C# validation.
+    /// </summary>
+    /// <param name="value">The string value to validate.</param>
+    /// <param name="paramName">The parameter name for exception reporting.</param>
+    /// <exception cref="ArgumentException">Thrown when the value is null or empty.</exception>
+    public static void ValidateStringNotNullOrEmpty(string? value, [CallerArgumentExpression(nameof(value))] string? paramName = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(value, paramName);
+    }
+
+    /// <summary>
+    ///     Validates that a string parameter is not null, empty, or whitespace using modern C# validation.
+    /// </summary>
+    /// <param name="value">The string value to validate.</param>
+    /// <param name="paramName">The parameter name for exception reporting.</param>
+    /// <exception cref="ArgumentException">Thrown when the value is null, empty, or whitespace.</exception>
+    public static void ValidateStringNotNullOrWhiteSpace(string? value, [CallerArgumentExpression(nameof(value))] string? paramName = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value, paramName);
     }
 }

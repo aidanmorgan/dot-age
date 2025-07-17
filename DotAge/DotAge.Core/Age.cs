@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
@@ -16,8 +17,17 @@ public class Age
 {
     private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger(nameof(Age)));
     private readonly List<IRecipient> _identities = new();
-
     private readonly List<IRecipient> _recipients = new();
+
+    /// <summary>
+    ///     Gets a read-only view of the configured recipients.
+    /// </summary>
+    public IReadOnlyList<IRecipient> Recipients => _recipients.AsReadOnly();
+
+    /// <summary>
+    ///     Gets a read-only view of the configured identities.
+    /// </summary>
+    public IReadOnlyList<IRecipient> Identities => _identities.AsReadOnly();
 
     /// <summary>
     ///     Adds a recipient for encryption.
@@ -25,7 +35,7 @@ public class Age
     /// <param name="recipient">The recipient to add.</param>
     public void AddRecipient(IRecipient recipient)
     {
-        if (recipient == null) throw new ArgumentNullException(nameof(recipient));
+        ArgumentNullException.ThrowIfNull(recipient);
         _recipients.Add(recipient);
     }
 
@@ -35,7 +45,7 @@ public class Age
     /// <param name="identity">The identity to add.</param>
     public void AddIdentity(IRecipient identity)
     {
-        if (identity == null) throw new ArgumentNullException(nameof(identity));
+        ArgumentNullException.ThrowIfNull(identity);
         _identities.Add(identity);
     }
 
@@ -43,10 +53,13 @@ public class Age
     ///     Encrypts data using the configured recipients.
     /// </summary>
     /// <param name="plaintext">The plaintext to encrypt.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The encrypted data.</returns>
-    public byte[] Encrypt(byte[] plaintext)
+    public byte[] Encrypt(byte[] plaintext, CancellationToken cancellationToken = default)
     {
-        if (plaintext == null) throw new ArgumentNullException(nameof(plaintext));
+        ArgumentNullException.ThrowIfNull(plaintext);
+        cancellationToken.ThrowIfCancellationRequested();
+        
         if (_recipients.Count == 0)
             throw new AgeEncryptionException("No recipients configured for encryption");
 
@@ -56,21 +69,27 @@ public class Age
             BitConverter.ToString(plaintext.Take(64).ToArray()));
 
         // Generate a random file key (16 bytes as per age spec)
-        var fileKey = RandomUtils.GenerateRandomBytes(16);
+        using var secureFileKey = SecureMemoryUtils.CreateSecureByteArray(RandomUtils.GenerateRandomBytes(16));
+        var fileKey = secureFileKey.Data;
         _logger.Value.LogTrace("Generated file key: {FileKey}", BitConverter.ToString(fileKey));
+        
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Create header with recipients
         var header = new Header();
         foreach (var recipient in _recipients)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var stanza = recipient.CreateStanza(fileKey);
             header.Stanzas.Add(stanza);
         }
 
         // Calculate header MAC
+        cancellationToken.ThrowIfCancellationRequested();
         header.CalculateMac(fileKey);
 
         // Create payload and encrypt data
+        cancellationToken.ThrowIfCancellationRequested();
         var payload = new Payload(fileKey);
         using var ms = new MemoryStream();
         payload.EncryptData(plaintext, ms);
@@ -81,11 +100,15 @@ public class Age
             BitConverter.ToString(encryptedPayload.Take(64).ToArray()));
 
         // Combine header and payload
+        cancellationToken.ThrowIfCancellationRequested();
         var headerEncoded = header.Encode();
         var headerBytes = Encoding.ASCII.GetBytes(headerEncoded);
         var result = new byte[headerBytes.Length + encryptedPayload.Length];
         Buffer.BlockCopy(headerBytes, 0, result, 0, headerBytes.Length);
         Buffer.BlockCopy(encryptedPayload, 0, result, headerBytes.Length, encryptedPayload.Length);
+        
+        // Clear sensitive header data
+        SecureMemoryUtils.ClearSensitiveData(headerBytes);
 
         _logger.Value.LogTrace("Final ciphertext length: {CiphertextLength} bytes", result.Length);
         _logger.Value.LogTrace("=== AGE ENCRYPT END ===");
@@ -96,10 +119,13 @@ public class Age
     ///     Decrypts data using the configured identities.
     /// </summary>
     /// <param name="ciphertext">The encrypted data to decrypt.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The decrypted data.</returns>
-    public byte[] Decrypt(byte[] ciphertext)
+    public byte[] Decrypt(byte[] ciphertext, CancellationToken cancellationToken = default)
     {
-        if (ciphertext == null) throw new ArgumentNullException(nameof(ciphertext));
+        ArgumentNullException.ThrowIfNull(ciphertext);
+        cancellationToken.ThrowIfCancellationRequested();
+        
         if (_identities.Count == 0)
             throw new AgeDecryptionException("No identities configured for decryption");
 
@@ -109,6 +135,7 @@ public class Age
             BitConverter.ToString(ciphertext.Take(64).ToArray()));
 
         // Parse header and get payload start position
+        cancellationToken.ThrowIfCancellationRequested();
         var (header, payloadStart) = ParseHeader(ciphertext);
         _logger.Value.LogTrace("Parsed header with {StanzaCount} stanzas", header.Stanzas.Count);
         _logger.Value.LogTrace("Payload starts at position: {PayloadStart}", payloadStart);
@@ -117,9 +144,11 @@ public class Age
         byte[]? fileKey = null;
         foreach (var identity in _identities)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _logger.Value.LogTrace("Trying identity: {IdentityType}", identity.GetType().Name);
             foreach (var stanza in header.Stanzas)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 _logger.Value.LogTrace("Processing stanza type: '{StanzaType}' with identity: {IdentityType}",
                     stanza.Type, identity.GetType().Name);
 
@@ -162,10 +191,15 @@ public class Age
             throw new AgeDecryptionException("Failed to unwrap file key with any identity");
         }
 
+        // Use secure wrapper for file key
+        using var secureFileKey = SecureMemoryUtils.CreateSecureByteArray(fileKey);
+        
         // Verify header MAC
-        header.CalculateMac(fileKey);
+        cancellationToken.ThrowIfCancellationRequested();
+        header.CalculateMac(secureFileKey.Data);
 
         // Decrypt the payload using the correct payload start position
+        cancellationToken.ThrowIfCancellationRequested();
         var encryptedPayload = new byte[ciphertext.Length - payloadStart];
         Buffer.BlockCopy(ciphertext, (int)payloadStart, encryptedPayload, 0, encryptedPayload.Length);
 
@@ -173,9 +207,12 @@ public class Age
         _logger.Value.LogTrace("Encrypted payload (first 64 bytes): {PayloadPrefix}",
             BitConverter.ToString(encryptedPayload.Take(64).ToArray()));
 
-        var payload = new Payload(fileKey);
+        var payload = new Payload(secureFileKey.Data);
         using var ms = new MemoryStream(encryptedPayload);
         var decryptedData = payload.DecryptData(ms);
+        
+        // Clear sensitive payload data
+        SecureMemoryUtils.ClearSensitiveData(encryptedPayload);
 
         _logger.Value.LogTrace("Decrypted data length: {DecryptedLength} bytes", decryptedData.Length);
         _logger.Value.LogTrace("Decrypted data (first 64 bytes): {DecryptedPrefix}",
@@ -189,14 +226,24 @@ public class Age
     /// </summary>
     /// <param name="inputPath">The input file path.</param>
     /// <param name="outputPath">The output file path.</param>
-    public void EncryptFile(string inputPath, string outputPath)
+    /// <param name="cancellationToken">The cancellation token.</param>
+    public void EncryptFile(string inputPath, string outputPath, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(inputPath)) throw new ArgumentException("Input path cannot be null or empty");
-        if (string.IsNullOrEmpty(outputPath)) throw new ArgumentException("Output path cannot be null or empty");
+        ValidationUtils.ValidateStringNotNullOrEmpty(inputPath);
+        ValidationUtils.ValidateStringNotNullOrEmpty(outputPath);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var plaintext = File.ReadAllBytes(inputPath);
-        var ciphertext = Encrypt(plaintext);
-        File.WriteAllBytes(outputPath, ciphertext);
+        try
+        {
+            var ciphertext = Encrypt(plaintext, cancellationToken);
+            File.WriteAllBytes(outputPath, ciphertext);
+        }
+        finally
+        {
+            // Clear sensitive plaintext data
+            SecureMemoryUtils.ClearSensitiveData(plaintext);
+        }
     }
 
     /// <summary>
@@ -204,14 +251,24 @@ public class Age
     /// </summary>
     /// <param name="inputPath">The input file path.</param>
     /// <param name="outputPath">The output file path.</param>
-    public async Task EncryptFileAsync(string inputPath, string outputPath)
+    /// <param name="cancellationToken">The cancellation token.</param>
+    public async Task EncryptFileAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(inputPath)) throw new ArgumentException("Input path cannot be null or empty");
-        if (string.IsNullOrEmpty(outputPath)) throw new ArgumentException("Output path cannot be null or empty");
+        ValidationUtils.ValidateStringNotNullOrEmpty(inputPath);
+        ValidationUtils.ValidateStringNotNullOrEmpty(outputPath);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var plaintext = await File.ReadAllBytesAsync(inputPath);
-        var ciphertext = Encrypt(plaintext);
-        await File.WriteAllBytesAsync(outputPath, ciphertext);
+        var plaintext = await File.ReadAllBytesAsync(inputPath, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var ciphertext = await Task.Run(() => Encrypt(plaintext, cancellationToken), cancellationToken).ConfigureAwait(false);
+            await File.WriteAllBytesAsync(outputPath, ciphertext, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Clear sensitive plaintext data
+            SecureMemoryUtils.ClearSensitiveData(plaintext);
+        }
     }
 
     /// <summary>
@@ -219,13 +276,15 @@ public class Age
     /// </summary>
     /// <param name="inputPath">The input file path.</param>
     /// <param name="outputPath">The output file path.</param>
-    public void DecryptFile(string inputPath, string outputPath)
+    /// <param name="cancellationToken">The cancellation token.</param>
+    public void DecryptFile(string inputPath, string outputPath, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(inputPath)) throw new ArgumentException("Input path cannot be null or empty");
-        if (string.IsNullOrEmpty(outputPath)) throw new ArgumentException("Output path cannot be null or empty");
+        ValidationUtils.ValidateStringNotNullOrEmpty(inputPath);
+        ValidationUtils.ValidateStringNotNullOrEmpty(outputPath);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var ciphertext = File.ReadAllBytes(inputPath);
-        var plaintext = Decrypt(ciphertext);
+        var plaintext = Decrypt(ciphertext, cancellationToken);
         File.WriteAllBytes(outputPath, plaintext);
     }
 
@@ -234,14 +293,16 @@ public class Age
     /// </summary>
     /// <param name="inputPath">The input file path.</param>
     /// <param name="outputPath">The output file path.</param>
-    public async Task DecryptFileAsync(string inputPath, string outputPath)
+    /// <param name="cancellationToken">The cancellation token.</param>
+    public async Task DecryptFileAsync(string inputPath, string outputPath, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(inputPath)) throw new ArgumentException("Input path cannot be null or empty");
-        if (string.IsNullOrEmpty(outputPath)) throw new ArgumentException("Output path cannot be null or empty");
+        ValidationUtils.ValidateStringNotNullOrEmpty(inputPath);
+        ValidationUtils.ValidateStringNotNullOrEmpty(outputPath);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var ciphertext = await File.ReadAllBytesAsync(inputPath);
-        var plaintext = Decrypt(ciphertext);
-        await File.WriteAllBytesAsync(outputPath, plaintext);
+        var ciphertext = await File.ReadAllBytesAsync(inputPath, cancellationToken).ConfigureAwait(false);
+        var plaintext = await Task.Run(() => Decrypt(ciphertext, cancellationToken), cancellationToken).ConfigureAwait(false);
+        await File.WriteAllBytesAsync(outputPath, plaintext, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -251,7 +312,7 @@ public class Age
     /// <returns>A tuple containing the parsed header and the payload start position.</returns>
     public static (Format.Header Header, long PayloadStart) ParseHeader(byte[] ciphertext)
     {
-        if (ciphertext == null) throw new ArgumentNullException(nameof(ciphertext));
+        ArgumentNullException.ThrowIfNull(ciphertext);
 
         _logger.Value.LogTrace("=== AGE PARSE HEADER START ===");
         _logger.Value.LogTrace("Ciphertext length: {CiphertextLength} bytes", ciphertext.Length);
