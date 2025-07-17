@@ -25,7 +25,8 @@ public class X25519Recipient : IRecipient
     /// <param name="publicKey">The public key.</param>
     public X25519Recipient(byte[] publicKey)
     {
-        if (publicKey == null || publicKey.Length != X25519.KeySize)
+        ArgumentNullException.ThrowIfNull(publicKey);
+        if (publicKey.Length != X25519.KeySize)
             throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
 
         _publicKey = publicKey;
@@ -39,10 +40,13 @@ public class X25519Recipient : IRecipient
     /// <param name="publicKey">The public key.</param>
     public X25519Recipient(byte[] privateKey, byte[] publicKey)
     {
-        if (privateKey == null || privateKey.Length != X25519.KeySize)
+        ArgumentNullException.ThrowIfNull(privateKey);
+        ArgumentNullException.ThrowIfNull(publicKey);
+        
+        if (privateKey.Length != X25519.KeySize)
             throw new AgeKeyException($"Private key must be {X25519.KeySize} bytes");
 
-        if (publicKey == null || publicKey.Length != X25519.KeySize)
+        if (publicKey.Length != X25519.KeySize)
             throw new AgeKeyException($"Public key must be {X25519.KeySize} bytes");
 
         _privateKey = privateKey;
@@ -58,42 +62,77 @@ public class X25519Recipient : IRecipient
     /// <returns>The stanza containing the encrypted file key.</returns>
     public Stanza CreateStanza(byte[] fileKey)
     {
-        if (fileKey == null || fileKey.Length != 16)
-            throw new AgeCryptoException("File key must be 16 bytes");
+        ValidationUtils.ValidateFileKey(fileKey);
 
         // Generate ephemeral key pair
         var (ephemeralPrivateKey, ephemeralPublicKey) = X25519.GenerateKeyPair();
-        Logger.Value.LogTrace("Ephemeral private key: {EphemeralPrivateKey}",
-            BitConverter.ToString(ephemeralPrivateKey));
-        Logger.Value.LogTrace("Ephemeral public key: {EphemeralPublicKey}", BitConverter.ToString(ephemeralPublicKey));
-        Logger.Value.LogTrace("Recipient public key: {RecipientPublicKey}", BitConverter.ToString(_publicKey));
+        
+        try
+        {
+            Logger.Value.LogTrace("Ephemeral private key: {EphemeralPrivateKey}",
+                BitConverter.ToString(ephemeralPrivateKey));
+            Logger.Value.LogTrace("Ephemeral public key: {EphemeralPublicKey}", BitConverter.ToString(ephemeralPublicKey));
+            Logger.Value.LogTrace("Recipient public key: {RecipientPublicKey}", BitConverter.ToString(_publicKey));
 
-        // Perform key agreement
-        var sharedSecret = X25519.KeyAgreement(ephemeralPrivateKey, _publicKey);
-        Logger.Value.LogTrace("Shared secret: {SharedSecret}", BitConverter.ToString(sharedSecret));
+            // Perform key agreement
+            var sharedSecret = X25519.KeyAgreement(ephemeralPrivateKey, _publicKey);
+            
+            try
+            {
+                Logger.Value.LogTrace("Shared secret: {SharedSecret}", BitConverter.ToString(sharedSecret));
 
-        // Create salt by combining ephemeral public key and recipient public key
-        var salt = new byte[ephemeralPublicKey.Length + _publicKey.Length];
-        Buffer.BlockCopy(ephemeralPublicKey, 0, salt, 0, ephemeralPublicKey.Length);
-        Buffer.BlockCopy(_publicKey, 0, salt, ephemeralPublicKey.Length, _publicKey.Length);
-        Logger.Value.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
+                // Create salt by combining ephemeral public key and recipient public key
+                var salt = new byte[ephemeralPublicKey.Length + _publicKey.Length];
+                Buffer.BlockCopy(ephemeralPublicKey, 0, salt, 0, ephemeralPublicKey.Length);
+                Buffer.BlockCopy(_publicKey, 0, salt, ephemeralPublicKey.Length, _publicKey.Length);
+                
+                try
+                {
+                    Logger.Value.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
 
-        // Derive wrapping key
-        var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, "age-encryption.org/v1/X25519", 32);
-        Logger.Value.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
+                    // Derive wrapping key
+                    var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, "age-encryption.org/v1/X25519", 32);
+                    
+                    try
+                    {
+                        Logger.Value.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
 
-        // Encrypt file key
-        var nonce = new byte[12]; // All zeros
-        Logger.Value.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
-        Logger.Value.LogTrace("File key (plaintext): {FileKey}", BitConverter.ToString(fileKey));
-        var wrappedKey = ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
-        Logger.Value.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(wrappedKey));
+                        // Encrypt file key
+                        var nonce = new byte[12]; // All zeros
+                        Logger.Value.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
+                        Logger.Value.LogTrace("File key (plaintext): {FileKey}", BitConverter.ToString(fileKey));
+                        var wrappedKey = ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
+                        Logger.Value.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(wrappedKey));
 
-        // Create stanza
-        var arguments = new List<string> { Base64Utils.EncodeToString(ephemeralPublicKey) };
-        var stanza = new Stanza("X25519", arguments, wrappedKey);
+                        // Create stanza
+                        var arguments = new List<string> { Base64Utils.EncodeToString(ephemeralPublicKey) };
+                        var stanza = new Stanza("X25519", arguments, wrappedKey);
 
-        return stanza;
+                        return stanza;
+                    }
+                    finally
+                    {
+                        // Clear wrapping key
+                        SecureMemoryUtils.ClearSensitiveData(wrappingKey);
+                    }
+                }
+                finally
+                {
+                    // Clear salt
+                    SecureMemoryUtils.ClearSensitiveData(salt);
+                }
+            }
+            finally
+            {
+                // Clear shared secret
+                SecureMemoryUtils.ClearSensitiveData(sharedSecret);
+            }
+        }
+        finally
+        {
+            // Clear ephemeral private key
+            SecureMemoryUtils.ClearSensitiveData(ephemeralPrivateKey);
+        }
     }
 
     public bool SupportsStanzaType(string stanzaType)
