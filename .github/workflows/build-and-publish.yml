@@ -139,12 +139,20 @@ jobs:
 
     - name: Install age and age-keygen
       run: |
-        # Get the latest release version
+        # Get the latest release version with error handling
         AGE_VERSION=$(curl -s https://api.github.com/repos/FiloSottile/age/releases/latest | grep '"tag_name"' | sed -E 's/.*"tag_name": "v([^"]+)".*/\1/')
+        if [ -z "$AGE_VERSION" ]; then
+          echo "Failed to get age version from GitHub API, using fallback version"
+          AGE_VERSION="1.1.1"  # Known working version
+        fi
         echo "Installing age version $AGE_VERSION"
 
-        # Download the appropriate binary for Linux
-        curl -L https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-linux-amd64.tar.gz -o age.tar.gz
+        # Download the appropriate binary for Linux with error handling
+        if ! curl -L https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-linux-amd64.tar.gz -o age.tar.gz; then
+          echo "Failed to download age version $AGE_VERSION, trying fallback version"
+          AGE_VERSION="1.1.1"
+          curl -L https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-linux-amd64.tar.gz -o age.tar.gz
+        fi
 
         # Extract the binaries
         tar -xvf age.tar.gz
@@ -163,12 +171,20 @@ jobs:
 
     - name: Install rage and rage-keygen
       run: |
-        # Get the latest release version
+        # Get the latest release version with error handling
         RAGE_VERSION=$(curl -s https://api.github.com/repos/str4d/rage/releases/latest | grep '"tag_name"' | sed -E 's/.*"tag_name": "v([^"]+)".*/\1/')
+        if [ -z "$RAGE_VERSION" ]; then
+          echo "Failed to get rage version from GitHub API, using fallback version"
+          RAGE_VERSION="0.12.0"  # Known working version
+        fi
         echo "Installing rage version $RAGE_VERSION"
 
-        # Download the appropriate binary for Linux
-        curl -L https://github.com/str4d/rage/releases/download/v${RAGE_VERSION}/rage-v${RAGE_VERSION}-x86_64-linux.tar.gz -o rage.tar.gz
+        # Download the appropriate binary for Linux with error handling
+        if ! curl -L https://github.com/str4d/rage/releases/download/v${RAGE_VERSION}/rage-v${RAGE_VERSION}-x86_64-linux.tar.gz -o rage.tar.gz; then
+          echo "Failed to download rage version $RAGE_VERSION, trying fallback version"
+          RAGE_VERSION="0.12.0"
+          curl -L https://github.com/str4d/rage/releases/download/v${RAGE_VERSION}/rage-v${RAGE_VERSION}-x86_64-linux.tar.gz -o rage.tar.gz
+        fi
 
         # Extract the binaries
         tar -xvf rage.tar.gz

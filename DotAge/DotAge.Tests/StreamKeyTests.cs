@@ -1,4 +1,6 @@
 using DotAge.Core.Utils;
+using Microsoft.Extensions.Logging;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 namespace DotAge.Tests;
 
@@ -7,6 +9,7 @@ namespace DotAge.Tests;
 /// </summary>
 public class StreamKeyTests
 {
+    private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger<StreamKeyTests>());
     [Fact]
     public void TestStreamKeyDerivation()
     {
@@ -23,9 +26,9 @@ public class StreamKeyTests
         Assert.Equal(32, streamKey.Length);
 
         // Log the values for debugging
-        Console.WriteLine($"File key: {BitConverter.ToString(fileKey)}");
-        Console.WriteLine($"Nonce: {BitConverter.ToString(nonce)}");
-        Console.WriteLine($"Stream key: {BitConverter.ToString(streamKey)}");
+        _logger.Value.LogDebug("File key: {FileKey}", BitConverter.ToString(fileKey));
+        _logger.Value.LogDebug("Nonce: {Nonce}", BitConverter.ToString(nonce));
+        _logger.Value.LogDebug("Stream key: {StreamKey}", BitConverter.ToString(streamKey));
 
         // Verify the result is deterministic
         var streamKey2 = Hkdf.DeriveKey(fileKey, nonce, "payload", 32);
@@ -45,8 +48,8 @@ public class StreamKeyTests
         var streamKey = Hkdf.DeriveKey(fileKey, nonce, "payload", 32);
 
         Assert.Equal(32, streamKey.Length);
-        Console.WriteLine($"File key: {BitConverter.ToString(fileKey)}");
-        Console.WriteLine($"Nonce (zeros): {BitConverter.ToString(nonce)}");
-        Console.WriteLine($"Stream key: {BitConverter.ToString(streamKey)}");
+        _logger.Value.LogDebug("File key: {FileKey}", BitConverter.ToString(fileKey));
+        _logger.Value.LogDebug("Nonce (zeros): {Nonce}", BitConverter.ToString(nonce));
+        _logger.Value.LogDebug("Stream key: {StreamKey}", BitConverter.ToString(streamKey));
     }
 }

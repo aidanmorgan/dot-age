@@ -16,18 +16,12 @@ namespace DotAge.Integration;
 public class RageCompatibilityTests : IDisposable
 {
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(30);
-    private readonly ILogger _logger;
+    private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger<RageCompatibilityTests>());
     private readonly string _tempDir;
-
-    static RageCompatibilityTests()
-    {
-        // Initialize logging from core LoggerFactory
-    }
 
     public RageCompatibilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("dotage-rage-tests");
-        _logger = LoggerFactory.CreateLogger<RageCompatibilityTests>();
     }
 
     public void Dispose()
@@ -39,18 +33,17 @@ public class RageCompatibilityTests : IDisposable
     public async Task Test1_DataEncryptedWithRageCanBeDecryptedWithDotAge()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 1: Data encrypted with rage can be decrypted with dotage");
+        _logger.Value.LogInformation("Test 1: Data encrypted with rage can be decrypted with dotage");
         var testData =
             Encoding.UTF8.GetBytes("Hello, this is test data encrypted with rage and decrypted with dotage!");
         var testDataFile = Path.Combine(_tempDir, "test1_plaintext.txt");
         await File.WriteAllBytesAsync(testDataFile, testData, cts.Token);
         var rageKeyFile = Path.Combine(_tempDir, "test1_key.txt");
-        await TestUtils.RunCommandWithExpectAsync("rage-keygen", "test-passphrase-rage1", $"-o {rageKeyFile}", _logger);
+        await TestUtils.RunCommandWithExpectAsync("rage-keygen", "test-passphrase-rage1", $"-o {rageKeyFile}");
         var (_, publicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var publicKey = KeyFileUtils.DecodeAgePublicKey(publicKeyLine);
         var rageEncryptedFile = Path.Combine(_tempDir, "test1_rage_encrypted.age");
-        await TestUtils.RunCommandAsync("rage", $"-e -r {publicKeyLine} -o {rageEncryptedFile} {testDataFile}", null,
-            _logger);
+        await TestUtils.RunCommandAsync("rage", $"-e -r {publicKeyLine} -o {rageEncryptedFile} {testDataFile}");
         var dotageDecryptedFile = Path.Combine(_tempDir, "test1_dotage_decrypted.txt");
         var (privateKeyBytes, _) = KeyFileUtils.ParseKeyFileAsBytes(rageKeyFile);
         var age = await Task.Run(() => new Age(), cts.Token);
@@ -58,20 +51,20 @@ public class RageCompatibilityTests : IDisposable
         await Task.Run(() => age.DecryptFile(rageEncryptedFile, dotageDecryptedFile), cts.Token);
         var decryptedData = await File.ReadAllBytesAsync(dotageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
-        _logger.LogInformation("Test 1 passed: rage -> dotage decryption successful");
+        _logger.Value.LogInformation("Test 1 passed: rage -> dotage decryption successful");
     }
 
     [Fact]
     public async Task Test2_DataEncryptedWithDotAgeCanBeDecryptedWithRage()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 2: Data encrypted with dotage can be decrypted with rage");
+        _logger.Value.LogInformation("Test 2: Data encrypted with dotage can be decrypted with rage");
         var testData =
             Encoding.UTF8.GetBytes("Hello, this is test data encrypted with dotage and decrypted with rage!");
         var testDataFile = Path.Combine(_tempDir, "test2_plaintext.txt");
         await File.WriteAllBytesAsync(testDataFile, testData, cts.Token);
         var rageKeyFile = Path.Combine(_tempDir, "test2_key.txt");
-        await TestUtils.RunCommandWithExpectAsync("rage-keygen", "test-passphrase-rage2", $"-o {rageKeyFile}", _logger);
+        await TestUtils.RunCommandWithExpectAsync("rage-keygen", "test-passphrase-rage2", $"-o {rageKeyFile}");
         var (_, publicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var (privateKeyBytes, publicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(rageKeyFile);
         var dotageEncryptedFile = Path.Combine(_tempDir, "test2_dotage_encrypted.age");
@@ -79,24 +72,23 @@ public class RageCompatibilityTests : IDisposable
         await Task.Run(() => age.AddRecipient(new X25519Recipient(publicKeyBytes)), cts.Token);
         await Task.Run(() => age.EncryptFile(testDataFile, dotageEncryptedFile), cts.Token);
         var rageDecryptedFile = Path.Combine(_tempDir, "test2_rage_decrypted.txt");
-        await TestUtils.RunCommandAsync("rage", $"-d -i {rageKeyFile} -o {rageDecryptedFile} {dotageEncryptedFile}",
-            null, _logger);
+        await TestUtils.RunCommandAsync("rage", $"-d -i {rageKeyFile} -o {rageDecryptedFile} {dotageEncryptedFile}");
         var decryptedData = await File.ReadAllBytesAsync(rageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
-        _logger.LogInformation("Test 2 passed: dotage -> rage decryption successful");
+        _logger.Value.LogInformation("Test 2 passed: dotage -> rage decryption successful");
     }
 
     [Fact]
     public async Task Test3_KeysGeneratedWithRageKeygenCanBeUsedWithDotAge()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation(
+        _logger.Value.LogInformation(
             "Test 3: Keys generated with rage-keygen can be used to encrypt and decrypt with dotage");
         var testData = Encoding.UTF8.GetBytes("Hello, this is test data using rage-keygen keys with dotage!");
         var testDataFile = Path.Combine(_tempDir, "test3_plaintext.txt");
         await File.WriteAllBytesAsync(testDataFile, testData, cts.Token);
         var rageKeyFile = Path.Combine(_tempDir, "test3_key.txt");
-        await TestUtils.RunCommandWithExpectAsync("rage-keygen", "test-passphrase-rage3", $"-o {rageKeyFile}", _logger);
+        await TestUtils.RunCommandWithExpectAsync("rage-keygen", "test-passphrase-rage3", $"-o {rageKeyFile}");
         var (_, publicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var (privateKeyBytes, publicKeyBytes) = KeyFileUtils.ParseKeyFileAsBytes(rageKeyFile);
         var dotageEncryptedFile = Path.Combine(_tempDir, "test3_dotage_encrypted.age");
@@ -109,14 +101,14 @@ public class RageCompatibilityTests : IDisposable
         await Task.Run(() => age.DecryptFile(dotageEncryptedFile, dotageDecryptedFile), cts.Token);
         var decryptedData = await File.ReadAllBytesAsync(dotageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
-        _logger.LogInformation("Test 3 passed: rage-keygen keys work with dotage");
+        _logger.Value.LogInformation("Test 3 passed: rage-keygen keys work with dotage");
     }
 
     [Fact]
     public async Task Test4_KeysGeneratedWithDotAgeKeygenCanBeUsedWithRage()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation(
+        _logger.Value.LogInformation(
             "Test 4: Keys generated with dotage-keygen can be used to encrypt and decrypt with rage");
         var testData = Encoding.UTF8.GetBytes("Hello, this is test data using dotage-keygen keys with rage!");
         var testDataFile = Path.Combine(_tempDir, "test4_plaintext.txt");
@@ -129,21 +121,19 @@ public class RageCompatibilityTests : IDisposable
             $"# created: {DateTime.UtcNow:o} by DotAge 0.0.1-alpha\n# public key: {publicKeyAge}\n{privateKeyAge}";
         await File.WriteAllTextAsync(dotageKeyFile, keyOutput, cts.Token);
         var rageEncryptedFile = Path.Combine(_tempDir, "test4_rage_encrypted.age");
-        await TestUtils.RunCommandAsync("rage", $"-e -r {publicKeyAge} -o {rageEncryptedFile} {testDataFile}", null,
-            _logger);
+        await TestUtils.RunCommandAsync("rage", $"-e -r {publicKeyAge} -o {rageEncryptedFile} {testDataFile}");
         var rageDecryptedFile = Path.Combine(_tempDir, "test4_rage_decrypted.txt");
-        await TestUtils.RunCommandAsync("rage", $"-d -i {dotageKeyFile} -o {rageDecryptedFile} {rageEncryptedFile}",
-            null, _logger);
+        await TestUtils.RunCommandAsync("rage", $"-d -i {dotageKeyFile} -o {rageDecryptedFile} {rageEncryptedFile}");
         var decryptedData = await File.ReadAllBytesAsync(rageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
-        _logger.LogInformation("Test 4 passed: dotage-keygen keys work with rage");
+        _logger.Value.LogInformation("Test 4 passed: dotage-keygen keys work with rage");
     }
 
     [Fact]
     public async Task Test5_ScryptPassphraseCompatibility()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 5: Scrypt passphrase compatibility with rage");
+        _logger.Value.LogInformation("Test 5: Scrypt passphrase compatibility with rage");
         var testData =
             Encoding.UTF8.GetBytes(
                 "Hello, this is test data encrypted with rage passphrase and decrypted with dotage!");
@@ -151,21 +141,21 @@ public class RageCompatibilityTests : IDisposable
         await File.WriteAllBytesAsync(testDataFile, testData, cts.Token);
         var rageEncryptedFile = Path.Combine(_tempDir, "test5_rage_encrypted.age");
         await TestUtils.RunCommandWithExpectAsync("rage",
-            "test-passphrase-scrypt-rage", $"-e -p -o {rageEncryptedFile} {testDataFile}", _logger);
+            "test-passphrase-scrypt-rage", $"-e -p -o {rageEncryptedFile} {testDataFile}");
         var dotageDecryptedFile = Path.Combine(_tempDir, "test5_dotage_decrypted.txt");
         var age = await Task.Run(() => new Age(), cts.Token);
         await Task.Run(() => age.AddIdentity(new ScryptRecipient("test-passphrase-scrypt-rage")), cts.Token);
         await Task.Run(() => age.DecryptFile(rageEncryptedFile, dotageDecryptedFile), cts.Token);
         var decryptedData = await File.ReadAllBytesAsync(dotageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
-        _logger.LogInformation("Test 5 passed: rage passphrase -> dotage decryption successful");
+        _logger.Value.LogInformation("Test 5 passed: rage passphrase -> dotage decryption successful");
     }
 
     [Fact]
     public async Task Test6_ScryptPassphraseReverseCompatibility()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 6: Scrypt passphrase reverse compatibility with rage");
+        _logger.Value.LogInformation("Test 6: Scrypt passphrase reverse compatibility with rage");
         var testData =
             Encoding.UTF8.GetBytes(
                 "Hello, this is test data encrypted with dotage passphrase and decrypted with rage!");
@@ -177,17 +167,17 @@ public class RageCompatibilityTests : IDisposable
         await Task.Run(() => age.EncryptFile(testDataFile, dotageEncryptedFile), cts.Token);
         var rageDecryptedFile = Path.Combine(_tempDir, "test6_rage_decrypted.txt");
         await TestUtils.RunCommandWithExpectAsync("rage",
-            "test-passphrase-scrypt-reverse-rage", $"-d -o {rageDecryptedFile} {dotageEncryptedFile}", _logger);
+            "test-passphrase-scrypt-reverse-rage", $"-d -o {rageDecryptedFile} {dotageEncryptedFile}");
         var decryptedData = await File.ReadAllBytesAsync(rageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
-        _logger.LogInformation("Test 6 passed: dotage passphrase -> rage decryption successful");
+        _logger.Value.LogInformation("Test 6 passed: dotage passphrase -> rage decryption successful");
     }
 
     [Fact]
     public async Task Test7_LargeFileCompatibility()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 7: Large file compatibility with rage");
+        _logger.Value.LogInformation("Test 7: Large file compatibility with rage");
         var testData = new byte[1024 * 1024];
         var random = new Random(42);
         random.NextBytes(testData);
@@ -195,12 +185,11 @@ public class RageCompatibilityTests : IDisposable
         await File.WriteAllBytesAsync(testDataFile, testData, cts.Token);
         var rageKeyFile = Path.Combine(_tempDir, "test7_key.txt");
         await TestUtils.RunCommandWithExpectAsync("rage-keygen", "test-passphrase-large-rage",
-            $"-o {rageKeyFile}", _logger);
+            $"-o {rageKeyFile}");
         var (_, publicKeyLine) = KeyFileUtils.ParseKeyFile(rageKeyFile);
         var publicKey = KeyFileUtils.DecodeAgePublicKey(publicKeyLine);
         var rageEncryptedFile = Path.Combine(_tempDir, "test7_rage_encrypted.age");
-        await TestUtils.RunCommandAsync("rage", $"-e -r {publicKeyLine} -o {rageEncryptedFile} {testDataFile}", null,
-            _logger);
+        await TestUtils.RunCommandAsync("rage", $"-e -r {publicKeyLine} -o {rageEncryptedFile} {testDataFile}");
         var dotageDecryptedFile = Path.Combine(_tempDir, "test7_dotage_decrypted.bin");
         var (privateKeyBytes, _) = KeyFileUtils.ParseKeyFileAsBytes(rageKeyFile);
         var age = await Task.Run(() => new Age(), cts.Token);
@@ -208,27 +197,27 @@ public class RageCompatibilityTests : IDisposable
         await Task.Run(() => age.DecryptFile(rageEncryptedFile, dotageDecryptedFile), cts.Token);
         var decryptedData = await File.ReadAllBytesAsync(dotageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
-        _logger.LogInformation("Test 7 passed: Large file rage -> dotage decryption successful");
+        _logger.Value.LogInformation("Test 7 passed: Large file rage -> dotage decryption successful");
     }
 
     [Fact]
     public async Task Test8_MultipleRecipientsCompatibility()
     {
-        _logger.LogInformation("Test 8: Multiple recipients compatibility with rage");
+        _logger.Value.LogInformation("Test 8: Multiple recipients compatibility with rage");
         var testData = Encoding.UTF8.GetBytes("Hello, this is test data with multiple recipients!");
         var testDataFile = Path.Combine(_tempDir, "test8_plaintext.txt");
         File.WriteAllBytes(testDataFile, testData);
         var key1File = Path.Combine(_tempDir, "test8_key1.txt");
         var key2File = Path.Combine(_tempDir, "test8_key2.txt");
         await TestUtils.RunCommandWithExpectAsync("rage-keygen", "test-passphrase-multi1-rage",
-            $"-o {key1File}", _logger);
+            $"-o {key1File}");
         await TestUtils.RunCommandWithExpectAsync("rage-keygen", "test-passphrase-multi2-rage",
-            $"-o {key2File}", _logger);
+            $"-o {key2File}");
         var (_, publicKey1Line) = KeyFileUtils.ParseKeyFile(key1File);
         var (_, publicKey2Line) = KeyFileUtils.ParseKeyFile(key2File);
         var rageEncryptedFile = Path.Combine(_tempDir, "test8_rage_encrypted.age");
         await TestUtils.RunCommandAsync("rage",
-            $"-e -r {publicKey1Line} -r {publicKey2Line} -o {rageEncryptedFile} {testDataFile}", null, _logger);
+            $"-e -r {publicKey1Line} -r {publicKey2Line} -o {rageEncryptedFile} {testDataFile}");
         var dotageDecryptedFile = Path.Combine(_tempDir, "test8_dotage_decrypted.txt");
         var (privateKey1Bytes, publicKey1Bytes) = KeyFileUtils.ParseKeyFileAsBytes(key1File);
         var age = new Age();
@@ -236,6 +225,6 @@ public class RageCompatibilityTests : IDisposable
         age.DecryptFile(rageEncryptedFile, dotageDecryptedFile);
         var decryptedData = File.ReadAllBytes(dotageDecryptedFile);
         Assert.Equal(testData, decryptedData);
-        _logger.LogInformation("Test 8 passed: Multiple recipients rage -> dotage decryption successful");
+        _logger.Value.LogInformation("Test 8 passed: Multiple recipients rage -> dotage decryption successful");
     }
 }

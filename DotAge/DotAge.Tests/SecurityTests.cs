@@ -15,13 +15,12 @@ namespace DotAge.Tests;
 public class SecurityTests : IDisposable
 {
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(30);
-    private readonly ILogger _logger;
+    private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger<SecurityTests>());
     private readonly string _tempDir;
 
     public SecurityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("security-tests");
-        _logger = LoggerFactory.CreateLogger<SecurityTests>();
     }
 
     public void Dispose()

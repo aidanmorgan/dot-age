@@ -56,7 +56,7 @@ and [Rage](https://github.com/str4d/rage) rust implementation. To run these test
 implementation and str4d/rage binaries installed.
 
 There is a stress test that can be run that will run random permutations of random data, you can run this by running
-`RUN_STRESS_TESTS=true dotnet test DotAge/DotAge.Tests/DotAge.Tests.csproj --filter "FullyQualifiedName~StressInteroperabilityTests"`
+`RUN_STRESS_TESTS=true dotnet test DotAge.Integration/DotAge.Integration.csproj --filter "FullyQualifiedName~StressInteroperabilityTests"`
 
 For the passphrase tests to work, you will need a version of [expect](https://linux.die.net/man/1/expect) installed to
 be able to handle the terminal

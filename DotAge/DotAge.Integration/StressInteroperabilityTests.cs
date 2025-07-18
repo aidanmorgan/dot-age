@@ -258,8 +258,7 @@ public class StressInteroperabilityTests : IDisposable
         // Decrypt with age using passphrase
         var ageDecrypted = Path.Combine(testDir, $"age_decrypted_{testNumber}.txt");
         var decryptResult =
-            await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-d -o {ageDecrypted} {dotageEncrypted}",
-                logger);
+            await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-d -o {ageDecrypted} {dotageEncrypted}");
         Assert.Equal(0, decryptResult.ExitCode);
 
         // Verify decrypted content matches original
@@ -280,8 +279,7 @@ public class StressInteroperabilityTests : IDisposable
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
 
         var encryptResult =
-            await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-e -p -o {ageEncrypted} {plaintextFile}",
-                logger);
+            await TestUtils.RunCommandWithExpectAsync("age", passphrase, $"-e -p -o {ageEncrypted} {plaintextFile}");
         Assert.Equal(0, encryptResult.ExitCode);
 
         // Decrypt with dotage using passphrase
@@ -380,7 +378,7 @@ public class StressInteroperabilityTests : IDisposable
         // Decrypt with rage using passphrase
         var rageDecrypted = Path.Combine(testDir, $"rage_decrypted_{testNumber}.txt");
         var decryptResult = await TestUtils.RunCommandWithExpectAsync("rage", passphrase,
-            $"-d -o {rageDecrypted} {dotageEncrypted}", logger);
+            $"-d -o {rageDecrypted} {dotageEncrypted}");
         Assert.Equal(0, decryptResult.ExitCode);
 
         // Verify decrypted content matches original
@@ -401,7 +399,7 @@ public class StressInteroperabilityTests : IDisposable
         var plaintextFile = Path.Combine(testDir, "plaintext.txt");
 
         var encryptResult = await TestUtils.RunCommandWithExpectAsync("rage", passphrase,
-            $"-e -p -o {rageEncrypted} {plaintextFile}", logger);
+            $"-e -p -o {rageEncrypted} {plaintextFile}");
         Assert.Equal(0, encryptResult.ExitCode);
 
         // Decrypt with dotage using passphrase

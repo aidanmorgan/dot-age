@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Program = DotAge.Cli.Program;
+using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
 // prevent the tests running in parallel to make life a bit easier when dealing with files and processes
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
@@ -21,6 +22,7 @@ public static class TestUtils
 {
     private static readonly Program _cli = new();
     private static readonly KeyGen.Program _keyGen = new();
+    private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger(nameof(TestUtils)));
 
     /// <summary>
     ///     Gets the path to the age binary.
@@ -35,8 +37,7 @@ public static class TestUtils
                 if (File.Exists(envPath))
                     return envPath;
 
-                Console.WriteLine(
-                    $"Warning: Environment variable AGE_BINARY_PATH is set to '{envPath}' but file does not exist.");
+                _logger.Value.LogWarning("Environment variable AGE_BINARY_PATH is set to '{Path}' but file does not exist.", envPath);
             }
 
             var defaultPath = Path.Combine("/usr/local/bin", "age");
@@ -57,8 +58,7 @@ public static class TestUtils
                 if (File.Exists(envPath))
                     return envPath;
 
-                Console.WriteLine(
-                    $"Warning: Environment variable AGE_KEYGEN_BINARY_PATH is set to '{envPath}' but file does not exist.");
+                _logger.Value.LogWarning("Environment variable AGE_KEYGEN_BINARY_PATH is set to '{Path}' but file does not exist.", envPath);
             }
 
             var defaultPath = Path.Combine("/usr/local/bin", "age-keygen");
@@ -79,8 +79,7 @@ public static class TestUtils
                 if (File.Exists(envPath))
                     return envPath;
 
-                Console.WriteLine(
-                    $"Warning: Environment variable RAGE_BINARY_PATH is set to '{envPath}' but file does not exist.");
+                _logger.Value.LogWarning("Environment variable RAGE_BINARY_PATH is set to '{Path}' but file does not exist.", envPath);
             }
 
             var defaultPath = Path.Combine("/usr/local/bin", "rage");
@@ -101,8 +100,7 @@ public static class TestUtils
                 if (File.Exists(envPath))
                     return envPath;
 
-                Console.WriteLine(
-                    $"Warning: Environment variable RAGE_KEYGEN_BINARY_PATH is set to '{envPath}' but file does not exist.");
+                _logger.Value.LogWarning("Environment variable RAGE_KEYGEN_BINARY_PATH is set to '{Path}' but file does not exist.", envPath);
             }
 
             var defaultPath = Path.Combine("/usr/local/bin", "rage-keygen");
@@ -113,9 +111,8 @@ public static class TestUtils
     /// <summary>
     ///     Validates that all required external binaries are available.
     /// </summary>
-    /// <param name="logger">Optional logger for output.</param>
     /// <returns>True if all binaries are available, false otherwise.</returns>
-    public static bool ValidateExternalBinaries(ILogger? logger = null)
+    public static bool ValidateExternalBinaries()
     {
         var binaries = new[]
         {
@@ -129,13 +126,13 @@ public static class TestUtils
         foreach (var (name, path) in binaries)
             if (path == null)
             {
-                logger?.LogWarning(
+                _logger.Value.LogWarning(
                     $"External binary '{name}' not found. Set {name.ToUpper().Replace("-", "_")}_BINARY_PATH environment variable to specify custom path.");
                 allAvailable = false;
             }
             else
             {
-                logger?.LogInformation($"Found {name} at: {path}");
+                _logger.Value.LogInformation($"Found {name} at: {path}");
             }
 
         return allAvailable;
@@ -147,10 +144,8 @@ public static class TestUtils
     /// <param name="command">The command to run.</param>
     /// <param name="arguments">The arguments for the command.</param>
     /// <param name="input">Optional input to provide to the command.</param>
-    /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunCommandAsync(string command, string arguments, string? input = null,
-        ILogger? logger = null)
+    public static async Task<CommandResult> RunCommandAsync(string command, string arguments, string? input = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -163,7 +158,7 @@ public static class TestUtils
             CreateNoWindow = true
         };
 
-        logger?.LogTrace("Invoking command: {Command} {Arguments}", command, arguments);
+        _logger.Value.LogTrace("Invoking command: {Command} {Arguments}", command, arguments);
 
         using var process = new Process { StartInfo = startInfo };
         process.Start();
@@ -179,9 +174,9 @@ public static class TestUtils
 
         await process.WaitForExitAsync();
 
-        logger?.LogTrace("Command stdout: {Stdout}", output);
-        logger?.LogTrace("Command stderr: {Stderr}", error);
-        logger?.LogTrace("Command exit code: {ExitCode}", process.ExitCode);
+        _logger.Value.LogTrace("Command stdout: {Stdout}", output);
+        _logger.Value.LogTrace("Command stderr: {Stderr}", error);
+        _logger.Value.LogTrace("Command exit code: {ExitCode}", process.ExitCode);
 
         return new CommandResult
         {
@@ -196,15 +191,14 @@ public static class TestUtils
     /// </summary>
     /// <param name="arguments">The arguments for the age command.</param>
     /// <param name="input">Optional input to provide to the command.</param>
-    /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunAgeAsync(string arguments, string? input = null, ILogger? logger = null)
+    public static async Task<CommandResult> RunAgeAsync(string arguments, string? input = null)
     {
         if (AgeBinaryPath == null)
             throw new InvalidOperationException(
                 "age binary not found. Set AGE_BINARY_PATH environment variable to specify custom path.");
 
-        return await RunCommandAsync(AgeBinaryPath, arguments, input, logger);
+        return await RunCommandAsync(AgeBinaryPath, arguments, input);
     }
 
     /// <summary>
@@ -212,16 +206,14 @@ public static class TestUtils
     /// </summary>
     /// <param name="arguments">The arguments for the age-keygen command.</param>
     /// <param name="input">Optional input to provide to the command.</param>
-    /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunAgeKeyGenAsync(string arguments, string? input = null,
-        ILogger? logger = null)
+    public static async Task<CommandResult> RunAgeKeyGenAsync(string arguments, string? input = null)
     {
         if (AgeKeyGenBinaryPath == null)
             throw new InvalidOperationException(
                 "age-keygen binary not found. Set AGE_KEYGEN_BINARY_PATH environment variable to specify custom path.");
 
-        return await RunCommandAsync(AgeKeyGenBinaryPath, arguments, input, logger);
+        return await RunCommandAsync(AgeKeyGenBinaryPath, arguments, input);
     }
 
     /// <summary>
@@ -229,15 +221,14 @@ public static class TestUtils
     /// </summary>
     /// <param name="arguments">The arguments for the rage command.</param>
     /// <param name="input">Optional input to provide to the command.</param>
-    /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunRageAsync(string arguments, string? input = null, ILogger? logger = null)
+    public static async Task<CommandResult> RunRageAsync(string arguments, string? input = null)
     {
         if (RageBinaryPath == null)
             throw new InvalidOperationException(
                 "rage binary not found. Set RAGE_BINARY_PATH environment variable to specify custom path.");
 
-        return await RunCommandAsync(RageBinaryPath, arguments, input, logger);
+        return await RunCommandAsync(RageBinaryPath, arguments, input);
     }
 
     /// <summary>
@@ -245,16 +236,14 @@ public static class TestUtils
     /// </summary>
     /// <param name="arguments">The arguments for the rage-keygen command.</param>
     /// <param name="input">Optional input to provide to the command.</param>
-    /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunRageKeyGenAsync(string arguments, string? input = null,
-        ILogger? logger = null)
+    public static async Task<CommandResult> RunRageKeyGenAsync(string arguments, string? input = null)
     {
         if (RageKeyGenBinaryPath == null)
             throw new InvalidOperationException(
                 "rage-keygen binary not found. Set RAGE_KEYGEN_BINARY_PATH environment variable to specify custom path.");
 
-        return await RunCommandAsync(RageKeyGenBinaryPath, arguments, input, logger);
+        return await RunCommandAsync(RageKeyGenBinaryPath, arguments, input);
     }
 
     /// <summary>
@@ -262,10 +251,8 @@ public static class TestUtils
     /// </summary>
     /// <param name="arguments">The arguments for the dotage command.</param>
     /// <param name="input">Optional input to provide to the command.</param>
-    /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunDotAgeAsync(string arguments, string? input = null,
-        ILogger? logger = null)
+    public static async Task<CommandResult> RunDotAgeAsync(string arguments, string? input = null)
     {
         // Capture console output by redirecting it
         var originalOut = Console.Out;
@@ -309,9 +296,8 @@ public static class TestUtils
     ///     Runs the dotage-keygen CLI using the static Run method instead of external binary.
     /// </summary>
     /// <param name="arguments">The arguments for the dotage-keygen command.</param>
-    /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation with the command result.</returns>
-    public static async Task<CommandResult> RunDotAgeKeyGenAsync(string arguments, ILogger? logger = null)
+    public static async Task<CommandResult> RunDotAgeKeyGenAsync(string arguments)
     {
         // Capture console output by redirecting it
         var originalOut = Console.Out;
@@ -350,11 +336,10 @@ public static class TestUtils
     ///     This method uses the static Run method instead of external binary.
     /// </summary>
     /// <param name="outputPath">The path to write the key file to.</param>
-    /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
-    public static async Task<CommandResult> RunDotAgeKeyGenWithOutputAsync(string outputPath, ILogger? logger = null)
+    public static async Task<CommandResult> RunDotAgeKeyGenWithOutputAsync(string outputPath)
     {
-        return await RunDotAgeKeyGenAsync($"-o {outputPath}", logger);
+        return await RunDotAgeKeyGenAsync($"-o {outputPath}");
     }
 
     /// <summary>
@@ -365,12 +350,10 @@ public static class TestUtils
     /// <param name="command">The command to run (e.g., 'age').</param>
     /// <param name="passphrase">The passphrase to provide.</param>
     /// <param name="arguments">The arguments for the command.</param>
-    /// <param name="logger">Optional logger for debug output.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     public static async Task<CommandResult> RunCommandWithExpectAsync(string command,
         string passphrase,
-        string arguments,
-        ILogger? logger = null)
+        string arguments)
     {
         // Get the path to the expect script in the output directory
         var expectScriptPath = Path.Combine(AppContext.BaseDirectory, "age_passphrase.exp");
@@ -394,7 +377,7 @@ public static class TestUtils
             CreateNoWindow = true
         };
 
-        logger?.LogInformation("Running command: {Command} {Arguments}", command, arguments);
+        _logger.Value.LogInformation("Running command: {Command} {Arguments}", command, arguments);
 
         using var process = new Process { StartInfo = startInfo };
         process.Start();
@@ -404,17 +387,17 @@ public static class TestUtils
 
         await process.WaitForExitAsync();
 
-        logger?.LogInformation("Command completed with exit code {ExitCode}", process.ExitCode);
+        _logger.Value.LogInformation("Command completed with exit code {ExitCode}", process.ExitCode);
         if (!string.IsNullOrEmpty(output))
-            logger?.LogDebug("Command stdout: {Output}", output);
+            _logger.Value.LogDebug("Command stdout: {Output}", output);
         if (!string.IsNullOrEmpty(error))
-            logger?.LogDebug("Command stderr: {Error}", error);
+            _logger.Value.LogDebug("Command stderr: {Error}", error);
 
         if (process.ExitCode != 0)
         {
             var errorMessage = $"Command '{command} {arguments}' failed with exit code {process.ExitCode}. " +
                                $"Output: {output}. Error: {error}";
-            logger?.LogError(errorMessage);
+            _logger.Value.LogError(errorMessage);
             throw new InvalidOperationException(errorMessage);
         }
 

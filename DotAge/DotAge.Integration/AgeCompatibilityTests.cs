@@ -18,18 +18,12 @@ public class AgeCompatibilityTests : IDisposable
     private static readonly Program _cli = new();
     private static readonly KeyGen.Program _keyGen = new();
 
-    private readonly ILogger _logger;
+    private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger<AgeCompatibilityTests>());
     private readonly string _tempDir;
-
-    static AgeCompatibilityTests()
-    {
-        // Initialize logging from core LoggerFactory
-    }
 
     public AgeCompatibilityTests()
     {
         _tempDir = TestUtils.CreateTempDirectory("dotage-age-tests");
-        _logger = LoggerFactory.CreateLogger<AgeCompatibilityTests>();
     }
 
     public void Dispose()
@@ -41,7 +35,7 @@ public class AgeCompatibilityTests : IDisposable
     public async Task Test1_DataEncryptedWithAgeCanBeDecryptedWithDotAge()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 1: Data encrypted with age can be decrypted with dotage");
+        _logger.Value.LogInformation("Test 1: Data encrypted with age can be decrypted with dotage");
 
         // Generate test data
         var testData = Encoding.UTF8.GetBytes("Hello, this is test data encrypted with age and decrypted with dotage!");
@@ -50,7 +44,7 @@ public class AgeCompatibilityTests : IDisposable
 
         // Generate a key pair using age-keygen with socat for interactive passphrase input
         var ageKeyFile = Path.Combine(_tempDir, "test1_key.txt");
-        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-123", $"-o {ageKeyFile}", _logger);
+        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-123", $"-o {ageKeyFile}");
 
         // Extract public key from the key file
         var (_, publicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
@@ -58,8 +52,7 @@ public class AgeCompatibilityTests : IDisposable
 
         // Encrypt with age
         var ageEncryptedFile = Path.Combine(_tempDir, "test1_age_encrypted.age");
-        await TestUtils.RunCommandAsync("age", $"-e -r {publicKeyLine} -o {ageEncryptedFile} {testDataFile}", null,
-            _logger);
+        await TestUtils.RunCommandAsync("age", $"-e -r {publicKeyLine} -o {ageEncryptedFile} {testDataFile}");
 
         // Decrypt with dotage
         var dotageDecryptedFile = Path.Combine(_tempDir, "test1_dotage_decrypted.txt");
@@ -73,14 +66,14 @@ public class AgeCompatibilityTests : IDisposable
         var decryptedData = await File.ReadAllBytesAsync(dotageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
 
-        _logger.LogInformation("Test 1 passed: age -> dotage decryption successful");
+        _logger.Value.LogInformation("Test 1 passed: age -> dotage decryption successful");
     }
 
     [Fact]
     public async Task Test2_DataEncryptedWithDotAgeCanBeDecryptedWithAge()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 2: Data encrypted with dotage can be decrypted with age");
+        _logger.Value.LogInformation("Test 2: Data encrypted with dotage can be decrypted with age");
 
         // Generate test data
         var testData = Encoding.UTF8.GetBytes("Hello, this is test data encrypted with dotage and decrypted with age!");
@@ -89,7 +82,7 @@ public class AgeCompatibilityTests : IDisposable
 
         // Generate a key pair using age-keygen with socat for interactive passphrase input
         var ageKeyFile = Path.Combine(_tempDir, "test2_key.txt");
-        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-456", $"-o {ageKeyFile}", _logger);
+        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-456", $"-o {ageKeyFile}");
 
         // Extract keys from the key file
         var (_, publicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
@@ -103,21 +96,20 @@ public class AgeCompatibilityTests : IDisposable
 
         // Decrypt with age
         var ageDecryptedFile = Path.Combine(_tempDir, "test2_age_decrypted.txt");
-        await TestUtils.RunCommandAsync("age", $"-d -i {ageKeyFile} -o {ageDecryptedFile} {dotageEncryptedFile}", null,
-            _logger);
+        await TestUtils.RunCommandAsync("age", $"-d -i {ageKeyFile} -o {ageDecryptedFile} {dotageEncryptedFile}");
 
         // Verify the decrypted data matches the original
         var decryptedData = await File.ReadAllBytesAsync(ageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
 
-        _logger.LogInformation("Test 2 passed: dotage -> age decryption successful");
+        _logger.Value.LogInformation("Test 2 passed: dotage -> age decryption successful");
     }
 
     [Fact]
     public async Task Test3_KeysGeneratedWithAgeKeygenCanBeUsedWithDotAge()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 3: Keys generated with age-keygen can be used to encrypt and decrypt with dotage");
+        _logger.Value.LogInformation("Test 3: Keys generated with age-keygen can be used to encrypt and decrypt with dotage");
 
         // Generate test data
         var testData = Encoding.UTF8.GetBytes("Hello, this is test data using age-keygen keys with dotage!");
@@ -127,7 +119,7 @@ public class AgeCompatibilityTests : IDisposable
         // Generate a key pair using age-keygen
         var ageKeyFile = Path.Combine(_tempDir, "test3_key.txt");
         await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-age-keygen",
-            $"-o {ageKeyFile}", _logger);
+            $"-o {ageKeyFile}");
 
         // Extract keys from the key file
         var (_, publicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
@@ -149,14 +141,14 @@ public class AgeCompatibilityTests : IDisposable
         var decryptedData = await File.ReadAllBytesAsync(dotageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
 
-        _logger.LogInformation("Test 3 passed: age-keygen keys work with dotage");
+        _logger.Value.LogInformation("Test 3 passed: age-keygen keys work with dotage");
     }
 
     [Fact]
     public async Task Test4_KeysGeneratedWithDotAgeKeygenCanBeUsedWithAge()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 4: Keys generated with dotage-keygen can be used to encrypt and decrypt with age");
+        _logger.Value.LogInformation("Test 4: Keys generated with dotage-keygen can be used to encrypt and decrypt with age");
 
         // Generate test data
         var testData = Encoding.UTF8.GetBytes("Hello, this is test data using dotage-keygen keys with age!");
@@ -174,26 +166,24 @@ public class AgeCompatibilityTests : IDisposable
 
         // Encrypt with age using the dotage-generated public key
         var ageEncryptedFile = Path.Combine(_tempDir, "test4_age_encrypted.age");
-        await TestUtils.RunCommandAsync("age", $"-e -r {publicKeyLine} -o {ageEncryptedFile} {testDataFile}", null,
-            _logger);
+        await TestUtils.RunCommandAsync("age", $"-e -r {publicKeyLine} -o {ageEncryptedFile} {testDataFile}");
 
         // Decrypt with age using the dotage-generated private key
         var ageDecryptedFile = Path.Combine(_tempDir, "test4_age_decrypted.txt");
-        await TestUtils.RunCommandAsync("age", $"-d -i {dotageKeyFile} -o {ageDecryptedFile} {ageEncryptedFile}", null,
-            _logger);
+        await TestUtils.RunCommandAsync("age", $"-d -i {dotageKeyFile} -o {ageDecryptedFile} {ageEncryptedFile}");
 
         // Verify the decrypted data matches the original
         var decryptedData = await File.ReadAllBytesAsync(ageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
 
-        _logger.LogInformation("Test 4 passed: dotage-keygen keys work with age");
+        _logger.Value.LogInformation("Test 4 passed: dotage-keygen keys work with age");
     }
 
     [Fact]
     public async Task Test5_ScryptPassphraseCompatibility()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 5: Scrypt passphrase compatibility with age");
+        _logger.Value.LogInformation("Test 5: Scrypt passphrase compatibility with age");
 
         // Generate test data
         var testData =
@@ -204,7 +194,7 @@ public class AgeCompatibilityTests : IDisposable
         // Encrypt with age using passphrase
         var ageEncryptedFile = Path.Combine(_tempDir, "test5_age_encrypted.age");
         await TestUtils.RunCommandWithExpectAsync("age",
-            "test-passphrase-scrypt", $"-e -p -o {ageEncryptedFile} {testDataFile}", _logger);
+            "test-passphrase-scrypt", $"-e -p -o {ageEncryptedFile} {testDataFile}");
 
         // Decrypt with dotage using passphrase
         var dotageDecryptedFile = Path.Combine(_tempDir, "test5_dotage_decrypted.txt");
@@ -216,14 +206,14 @@ public class AgeCompatibilityTests : IDisposable
         var decryptedData = await File.ReadAllBytesAsync(dotageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
 
-        _logger.LogInformation("Test 5 passed: age passphrase -> dotage decryption successful");
+        _logger.Value.LogInformation("Test 5 passed: age passphrase -> dotage decryption successful");
     }
 
     [Fact]
     public async Task Test6_ScryptPassphraseReverseCompatibility()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 6: Scrypt passphrase reverse compatibility with age");
+        _logger.Value.LogInformation("Test 6: Scrypt passphrase reverse compatibility with age");
 
         // Generate test data
         var testData =
@@ -240,20 +230,20 @@ public class AgeCompatibilityTests : IDisposable
         // Decrypt with age using passphrase
         var ageDecryptedFile = Path.Combine(_tempDir, "test6_age_decrypted.txt");
         await TestUtils.RunCommandWithExpectAsync("age",
-            "test-passphrase-scrypt-reverse", $"-d -o {ageDecryptedFile} {dotageEncryptedFile}", _logger);
+            "test-passphrase-scrypt-reverse", $"-d -o {ageDecryptedFile} {dotageEncryptedFile}");
 
         // Verify the decrypted data matches the original
         var decryptedData = await File.ReadAllBytesAsync(ageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
 
-        _logger.LogInformation("Test 6 passed: dotage passphrase -> age decryption successful");
+        _logger.Value.LogInformation("Test 6 passed: dotage passphrase -> age decryption successful");
     }
 
     [Fact]
     public async Task Test7_LargeFileCompatibility()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 7: Large file compatibility with age");
+        _logger.Value.LogInformation("Test 7: Large file compatibility with age");
 
         // Generate large test data (1MB)
         var testData = new byte[1024 * 1024];
@@ -264,7 +254,7 @@ public class AgeCompatibilityTests : IDisposable
 
         // Generate a key pair using age-keygen
         var ageKeyFile = Path.Combine(_tempDir, "test7_key.txt");
-        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-large", $"-o {ageKeyFile}", _logger);
+        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-large", $"-o {ageKeyFile}");
 
         // Extract public key from the key file
         var (_, publicKeyLine) = KeyFileUtils.ParseKeyFile(ageKeyFile);
@@ -272,8 +262,7 @@ public class AgeCompatibilityTests : IDisposable
 
         // Encrypt with age
         var ageEncryptedFile = Path.Combine(_tempDir, "test7_age_encrypted.age");
-        await TestUtils.RunCommandAsync("age", $"-e -r {publicKeyLine} -o {ageEncryptedFile} {testDataFile}", null,
-            _logger);
+        await TestUtils.RunCommandAsync("age", $"-e -r {publicKeyLine} -o {ageEncryptedFile} {testDataFile}");
 
         // Decrypt with dotage
         var dotageDecryptedFile = Path.Combine(_tempDir, "test7_dotage_decrypted.bin");
@@ -287,14 +276,14 @@ public class AgeCompatibilityTests : IDisposable
         var decryptedData = await File.ReadAllBytesAsync(dotageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
 
-        _logger.LogInformation("Test 7 passed: Large file age -> dotage decryption successful");
+        _logger.Value.LogInformation("Test 7 passed: Large file age -> dotage decryption successful");
     }
 
     [Fact]
     public async Task Test8_MultipleRecipientsCompatibility()
     {
         using var cts = new CancellationTokenSource(TestTimeout);
-        _logger.LogInformation("Test 8: Multiple recipients compatibility with age");
+        _logger.Value.LogInformation("Test 8: Multiple recipients compatibility with age");
 
         // Generate test data
         var testData = Encoding.UTF8.GetBytes("Hello, this is test data with multiple recipients!");
@@ -304,8 +293,8 @@ public class AgeCompatibilityTests : IDisposable
         // Generate multiple key pairs using age-keygen
         var key1File = Path.Combine(_tempDir, "test8_key1.txt");
         var key2File = Path.Combine(_tempDir, "test8_key2.txt");
-        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-multi1", $"-o {key1File}", _logger);
-        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-multi2", $"-o {key2File}", _logger);
+        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-multi1", $"-o {key1File}");
+        await TestUtils.RunCommandWithExpectAsync("age-keygen", "test-passphrase-multi2", $"-o {key2File}");
 
         // Extract public keys
         var (_, publicKey1Line) = KeyFileUtils.ParseKeyFile(key1File);
@@ -314,7 +303,7 @@ public class AgeCompatibilityTests : IDisposable
         // Encrypt with age using multiple recipients
         var ageEncryptedFile = Path.Combine(_tempDir, "test8_age_encrypted.age");
         await TestUtils.RunCommandAsync("age",
-            $"-e -r {publicKey1Line} -r {publicKey2Line} -o {ageEncryptedFile} {testDataFile}", null, _logger);
+            $"-e -r {publicKey1Line} -r {publicKey2Line} -o {ageEncryptedFile} {testDataFile}");
 
         // Decrypt with dotage using both keys
         var dotageDecryptedFile = Path.Combine(_tempDir, "test8_dotage_decrypted.txt");
@@ -330,6 +319,6 @@ public class AgeCompatibilityTests : IDisposable
         var decryptedData = await File.ReadAllBytesAsync(dotageDecryptedFile, cts.Token);
         Assert.Equal(testData, decryptedData);
 
-        _logger.LogInformation("Test 8 passed: Multiple recipients age -> dotage decryption successful");
+        _logger.Value.LogInformation("Test 8 passed: Multiple recipients age -> dotage decryption successful");
     }
 }

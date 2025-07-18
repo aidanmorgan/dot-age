@@ -18,6 +18,10 @@ if {$argc > 2} {
 puts "Command: $cmd"
 puts "Arguments: $args"
 
+# Set environment variables to help with pinentry
+set env(LC_CTYPE) "en_US.UTF-8"
+set env(TERM) "xterm"
+
 # Spawn the command with arguments if any
 if {[llength $args] > 0} {
     spawn $cmd {*}$args
@@ -26,6 +30,20 @@ if {[llength $args] > 0} {
 }
 
 expect {
+    # Handle pinentry-curses interface
+    -re {Type passphrase.*} {
+        send "$passphrase\r"
+        exp_continue
+    }
+    -re {Passphrase.*} {
+        send "$passphrase\r"
+        exp_continue
+    }
+    -re {<OK>} {
+        send "\r"
+        exp_continue
+    }
+    # Handle traditional text prompts
     -re {(?i)passphrase.*:} {
         send "$passphrase\r"
         exp_continue
