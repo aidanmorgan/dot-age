@@ -18,6 +18,7 @@ public class ScryptRecipient : IRecipient
     private const int DefaultWorkFactor = 18;
     private const int MaxWorkFactor = 30; // Match Go's SetWorkFactor range (1-30)
     private const string ScryptLabel = "age-encryption.org/v1/scrypt";
+    private const int WrappedKeySize = 32; // 16 bytes file key + 16 bytes tag
 
     private static readonly Lazy<ILogger<ScryptRecipient>> Logger = new(() =>
         LoggerFactory.CreateLogger<ScryptRecipient>());
@@ -52,7 +53,7 @@ public class ScryptRecipient : IRecipient
             passphrase.Length, _workFactor);
     }
 
-    public string Type => "scrypt";
+    public string Type => StanzaTypes.Scrypt;
 
     public Stanza CreateStanza(byte[] fileKey)
     {
@@ -60,7 +61,7 @@ public class ScryptRecipient : IRecipient
 
         Logger.Value.LogTrace("Creating scrypt stanza for file key (length: {FileKeyLength} bytes)", fileKey.Length);
 
-        // Generate a random salt (16 bytes as per age spec)
+        // Generate a random salt as per age spec
         var salt = RandomUtils.GenerateSalt();
         Logger.Value.LogTrace("Generated random salt length: {SaltLength} bytes", salt.Length);
 
@@ -106,9 +107,10 @@ public class ScryptRecipient : IRecipient
 
         // Extract the salt and work factor
         var salt = Base64Utils.DecodeString(stanza.Arguments[0]);
-        if (salt.Length != 16)
+        if (salt.Length != CryptoConstants.SaltSize)
         {
-            Logger.Value.LogTrace("Invalid salt length: {SaltLength} (expected 16)", salt.Length);
+            Logger.Value.LogTrace("Invalid salt length: {SaltLength} (expected {ExpectedSaltSize})", salt.Length,
+                CryptoConstants.SaltSize);
             return null; // Invalid salt length
         }
 
@@ -148,10 +150,11 @@ public class ScryptRecipient : IRecipient
         var wrappedKey = stanza.Body;
         Logger.Value.LogTrace("Extracted wrapped key length: {WrappedKeyLength} bytes", wrappedKey.Length);
 
-        // Validate the encrypted file key size (16 bytes file key + 16 bytes tag = 32 bytes)
-        if (wrappedKey.Length != 32)
+        // Validate the encrypted file key size
+        if (wrappedKey.Length != WrappedKeySize)
         {
-            Logger.Value.LogTrace("Invalid wrapped key length: {WrappedKeyLength} (expected 32)", wrappedKey.Length);
+            Logger.Value.LogTrace("Invalid wrapped key length: {WrappedKeyLength} (expected {ExpectedWrappedKeySize})",
+                wrappedKey.Length, WrappedKeySize);
             return null; // Invalid encrypted file key size
         }
 

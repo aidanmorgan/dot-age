@@ -22,9 +22,10 @@ public static class LoggerFactory
             _loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
             {
                 builder.ClearProviders();
-                builder.AddProvider(new FilteredConsoleLoggerProvider());
 #if DEBUG
-                builder.AddProvider(new FileLoggerProvider("dotage-stress.log"));
+                builder.AddProvider(new FilteredConsoleLoggerProvider());
+                var logFilePath = Environment.GetEnvironmentVariable("DOTAGE_LOG_FILE") ?? "dotage-debug.log";
+                builder.AddProvider(new FileLoggerProvider(logFilePath));
 #endif
             });
             return _loggerFactory;
@@ -69,15 +70,17 @@ public class FilteredConsoleLoggerProvider : ILoggerProvider
 }
 
 /// <summary>
-///     Console logger that only shows Info level and above.
+///     Console logger that filters log levels based on environment variable configuration.
 /// </summary>
 public class FilteredConsoleLogger : ILogger
 {
     private readonly string _categoryName;
+    private readonly LogLevel _minimumLogLevel;
 
     public FilteredConsoleLogger(string categoryName)
     {
         _categoryName = categoryName;
+        _minimumLogLevel = GetMinimumLogLevel();
     }
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull
@@ -87,7 +90,7 @@ public class FilteredConsoleLogger : ILogger
 
     public bool IsEnabled(LogLevel logLevel)
     {
-        return logLevel >= LogLevel.Information; // Only Info and above
+        return logLevel >= _minimumLogLevel;
     }
 
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
@@ -102,6 +105,25 @@ public class FilteredConsoleLogger : ILogger
         var logEntry = $"{timestamp} [{level}] {_categoryName}: {message}";
 
         Console.WriteLine(logEntry);
+    }
+
+    private static LogLevel GetMinimumLogLevel()
+    {
+        var logLevelString = Environment.GetEnvironmentVariable("DOTAGE_LOG_LEVEL");
+        if (string.IsNullOrEmpty(logLevelString))
+            return LogLevel.Information; // Default to Information
+
+        return logLevelString.ToUpperInvariant() switch
+        {
+            "TRACE" => LogLevel.Trace,
+            "DEBUG" => LogLevel.Debug,
+            "INFORMATION" => LogLevel.Information,
+            "WARNING" => LogLevel.Warning,
+            "ERROR" => LogLevel.Error,
+            "CRITICAL" => LogLevel.Critical,
+            "NONE" => LogLevel.None,
+            _ => LogLevel.Information // Default fallback
+        };
     }
 }
 

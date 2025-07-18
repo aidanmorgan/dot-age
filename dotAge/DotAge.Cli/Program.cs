@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Text;
 using DotAge.Core;
 using DotAge.Core.Crypto;
+using DotAge.Core.Exceptions;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
@@ -489,14 +490,37 @@ Example:
             {
                 decryptedData = age.Decrypt(inputData);
             }
-            catch (Exception ex)
+            catch (AgeDecryptionException ex)
             {
                 logger.LogError($"Decryption failed: {ex.Message}");
                 return 1;
             }
+            catch (AgeCryptoException ex)
+            {
+                logger.LogError($"Cryptographic error: {ex.Message}");
+                return 1;
+            }
+            catch (AgeFormatException ex)
+            {
+                logger.LogError($"Invalid age format: {ex.Message}");
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"Unexpected error during decryption: {ex.Message}");
+                return 1;
+            }
 
             // Write the output
-            await WriteOutputDataAsync(decryptedData, outputFlag);
+            try
+            {
+                await WriteOutputDataAsync(decryptedData, outputFlag);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"Failed to write output: {ex.Message}");
+                return 1;
+            }
 
             return 0;
         }
