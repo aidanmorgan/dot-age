@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Format;
 using Microsoft.Extensions.Logging;
@@ -20,16 +21,18 @@ public static class ValidationUtils
     /// <param name="paramName">The parameter name for exception reporting.</param>
     /// <exception cref="AgeKeyException">Thrown when the file key is invalid.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the file key is null.</exception>
-    public static void ValidateFileKey(byte[]? fileKey, [CallerArgumentExpression(nameof(fileKey))] string? paramName = null)
+    public static void ValidateFileKey(byte[]? fileKey,
+        [CallerArgumentExpression(nameof(fileKey))] string? paramName = null)
     {
         ArgumentNullException.ThrowIfNull(fileKey, paramName);
 
         Logger.Value.LogTrace("Validating file key of length {FileKeyLength}", fileKey.Length);
 
-        if (fileKey.Length == 16) return;
+        if (fileKey.Length == CryptoConstants.FileKeySize) return;
 
-        Logger.Value.LogTrace("File key validation failed: expected 16 bytes, got {FileKeyLength}", fileKey.Length);
-        throw new AgeKeyException("File key must be 16 bytes");
+        Logger.Value.LogTrace("File key validation failed: expected {ExpectedFileKeySize} bytes, got {FileKeyLength}",
+            CryptoConstants.FileKeySize, fileKey.Length);
+        throw new AgeKeyException($"File key must be {CryptoConstants.FileKeySize} bytes");
     }
 
     /// <summary>
@@ -73,7 +76,8 @@ public static class ValidationUtils
     /// <param name="value">The string value to validate.</param>
     /// <param name="paramName">The parameter name for exception reporting.</param>
     /// <exception cref="ArgumentException">Thrown when the value is null or empty.</exception>
-    public static void ValidateStringNotNullOrEmpty(string? value, [CallerArgumentExpression(nameof(value))] string? paramName = null)
+    public static void ValidateStringNotNullOrEmpty(string? value,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(value, paramName);
     }
@@ -84,7 +88,8 @@ public static class ValidationUtils
     /// <param name="value">The string value to validate.</param>
     /// <param name="paramName">The parameter name for exception reporting.</param>
     /// <exception cref="ArgumentException">Thrown when the value is null, empty, or whitespace.</exception>
-    public static void ValidateStringNotNullOrWhiteSpace(string? value, [CallerArgumentExpression(nameof(value))] string? paramName = null)
+    public static void ValidateStringNotNullOrWhiteSpace(string? value,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value, paramName);
     }

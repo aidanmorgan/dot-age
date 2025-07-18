@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
 using Microsoft.Extensions.Logging;
 using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
@@ -34,7 +35,7 @@ public static class RandomUtils
     /// </summary>
     /// <param name="saltLength">The length of the salt to generate.</param>
     /// <returns>A random salt as a byte array.</returns>
-    public static byte[] GenerateSalt(int saltLength = 16)
+    public static byte[] GenerateSalt(int saltLength = CryptoConstants.SaltSize)
     {
         if (saltLength <= 0)
             throw new AgeCryptoException("Salt length must be positive");

@@ -230,5 +230,4 @@ public static class Bech32
 
         return ret.ToArray();
     }
-
 }
