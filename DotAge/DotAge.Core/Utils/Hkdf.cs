@@ -10,6 +10,9 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class Hkdf
 {
+    private const int Sha256HashLength = 32;
+    private const int MaxExpandBlocks = 255;
+
     private static readonly Lazy<ILogger> _logger = new(() => LoggerFactory.CreateLogger(nameof(Hkdf)));
 
     /// <summary>
@@ -66,9 +69,9 @@ public static class Hkdf
     private static byte[] Expand(byte[] prk, byte[] info, int length)
     {
         // RFC 5869: N = ceil(length / HashLen)
-        var hashLen = 32; // SHA-256 output size
-        var n = (int)Math.Ceiling((double)length / hashLen);
-        if (n > 255) throw new ArgumentException("Cannot expand to more than 255 blocks of hash length");
+        var n = (int)Math.Ceiling((double)length / Sha256HashLength);
+        if (n > MaxExpandBlocks)
+            throw new ArgumentException($"Cannot expand to more than {MaxExpandBlocks} blocks of hash length");
         var okm = new byte[length];
         var previous = Array.Empty<byte>();
         var offset = 0;
@@ -81,7 +84,7 @@ public static class Hkdf
             Buffer.BlockCopy(info, 0, input, previous.Length, info.Length);
             input[input.Length - 1] = (byte)i;
             previous = hmac.ComputeHash(input);
-            var toCopy = Math.Min(hashLen, length - offset);
+            var toCopy = Math.Min(Sha256HashLength, length - offset);
             Buffer.BlockCopy(previous, 0, okm, offset, toCopy);
             offset += toCopy;
         }

@@ -8,8 +8,30 @@ using DotAge.Core.Utils;
 
 namespace DotAge.Tests;
 
-public class EdgeCaseTests
+/// <summary>
+///     Tests for core Age functionality including encryption/decryption, format parsing, and header handling.
+/// </summary>
+public class CoreTests
 {
+    [Fact]
+    public void Age_EncryptionDecryption_Works()
+    {
+        var (privateKey, publicKey) = X25519.GenerateKeyPair();
+        var age = new Age();
+        age.AddRecipient(new X25519Recipient(publicKey));
+
+        var plaintext = "Hello, World!";
+        var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
+
+        var ciphertext = age.Encrypt(plaintextBytes);
+        var decryptAge = new Age();
+        decryptAge.AddIdentity(new X25519Recipient(privateKey, publicKey));
+        var decryptedBytes = decryptAge.Decrypt(ciphertext);
+
+        var decryptedText = Encoding.UTF8.GetString(decryptedBytes);
+        Assert.Equal(plaintext, decryptedText);
+    }
+
     [Fact]
     public void Age_ZeroByteFile_Works()
     {
@@ -129,87 +151,6 @@ public class EdgeCaseTests
     }
 
     [Fact]
-    public void X25519Recipient_InvalidKeySize_ThrowsException()
-    {
-        Assert.Throws<AgeKeyException>(() => new X25519Recipient(new byte[31]));
-        Assert.Throws<AgeKeyException>(() => new X25519Recipient(new byte[33]));
-    }
-
-    [Fact]
-    public void ScryptRecipient_EmptyPassword_ThrowsException()
-    {
-        Assert.Throws<AgeKeyException>(() => new ScryptRecipient(""));
-        Assert.Throws<AgeKeyException>(() => new ScryptRecipient(null!));
-    }
-
-    [Fact]
-    public void Header_InvalidFormat_ThrowsException()
-    {
-        Assert.Throws<AgeFormatException>(() => Header.Decode("invalid header"));
-        Assert.Throws<AgeFormatException>(() => Header.Decode(""));
-    }
-
-    [Fact]
-    public void Bech32_InvalidInput_ThrowsException()
-    {
-        Assert.Throws<AgeFormatException>(() => Bech32.Decode("invalid"));
-        Assert.Throws<AgeFormatException>(() => Bech32.Decode(""));
-    }
-
-    [Fact]
-    public void Base64Utils_InvalidInput_ThrowsException()
-    {
-        Assert.Throws<AgeFormatException>(() => Base64Utils.DecodeString("invalid base64"));
-    }
-
-    [Fact]
-    public void ChaCha20Poly1305_InvalidKeySize_ThrowsException()
-    {
-        var nonce = RandomUtils.GenerateRandomBytes(12);
-        var plaintext = Encoding.UTF8.GetBytes("test");
-        Assert.Throws<AgeCryptoException>(() =>
-            ChaCha20Poly1305.Encrypt(new byte[31], nonce, plaintext));
-        Assert.Throws<AgeCryptoException>(() =>
-            ChaCha20Poly1305.Encrypt(new byte[33], nonce, plaintext));
-    }
-
-    [Fact]
-    public void ChaCha20Poly1305_InvalidNonceSize_ThrowsException()
-    {
-        var key = RandomUtils.GenerateRandomBytes(32);
-        var plaintext = Encoding.UTF8.GetBytes("test");
-        Assert.Throws<AgeCryptoException>(() =>
-            ChaCha20Poly1305.Encrypt(key, new byte[11], plaintext));
-        Assert.Throws<AgeCryptoException>(() =>
-            ChaCha20Poly1305.Encrypt(key, new byte[13], plaintext));
-    }
-
-    [Fact]
-    public void Scrypt_InvalidParameters_ThrowsException()
-    {
-        var password = "test";
-        var salt = RandomUtils.GenerateRandomBytes(16);
-        Assert.Throws<AgeCryptoException>(() =>
-            Scrypt.DeriveKey(password, salt, 0, 8));
-        Assert.Throws<AgeCryptoException>(() =>
-            Scrypt.DeriveKey(password, salt, 31, 0));
-        Assert.Throws<AgeCryptoException>(() =>
-            Scrypt.DeriveKey(password, salt, 31, 8, 0));
-    }
-
-    [Fact]
-    public void Hkdf_InvalidParameters_ThrowsException()
-    {
-        var salt = RandomUtils.GenerateRandomBytes(32);
-        var ikm = RandomUtils.GenerateRandomBytes(32);
-        var info = "test";
-        Assert.Throws<ArgumentException>(() =>
-            Hkdf.DeriveKey(salt, ikm, info, 0));
-        Assert.Throws<ArgumentException>(() =>
-            Hkdf.DeriveKey(salt, ikm, info, -1));
-    }
-
-    [Fact]
     public void Age_ThrowsOnInvalidKey()
     {
         var age = new Age();
@@ -225,5 +166,37 @@ public class EdgeCaseTests
         age.AddIdentity(new X25519Recipient(RandomUtils.GenerateRandomBytes(32), RandomUtils.GenerateRandomBytes(32)));
         Assert.Throws<AgeFormatException>(() =>
             age.Decrypt(invalidData));
+    }
+
+    [Fact]
+    public void Header_Parsing_Works()
+    {
+        // Valid stanza: 16-byte base64 body ("AAAAAAAAAAAAAAAAAAAAAA==")
+        var headerText = "age-encryption.org/v1\n-> X25519 test-arg\nAAAAAAAAAAAAAAAAAAAAAA==\n";
+        var header = Header.Decode(headerText);
+
+        Assert.Equal("age-encryption.org/v1", Header.Version);
+        Assert.Single(header.Stanzas);
+        Assert.Equal("X25519", header.Stanzas[0].Type);
+    }
+
+    [Fact]
+    public void Header_Serialization_Works()
+    {
+        var stanza = new Stanza("X25519", new[] { "test-arg" }, Convert.FromBase64String("dGVzdA=="));
+        var header = new Header(new[] { stanza });
+
+        var serialized = header.Encode();
+        var parsed = Header.Decode(serialized);
+
+        Assert.Equal(Header.Version, Header.Version);
+        Assert.Equal(header.Stanzas[0].Type, parsed.Stanzas[0].Type);
+    }
+
+    [Fact]
+    public void Header_InvalidFormat_ThrowsException()
+    {
+        Assert.Throws<AgeFormatException>(() => Header.Decode("invalid header"));
+        Assert.Throws<AgeFormatException>(() => Header.Decode(""));
     }
 }

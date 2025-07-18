@@ -4,7 +4,7 @@ using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
 using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
-namespace DotAge.Tests;
+namespace DotAge.Integration;
 
 /// <summary>
 ///     Comprehensive stress tests for interoperability between age, rage, and dotage.

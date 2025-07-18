@@ -31,7 +31,7 @@ public static class Scrypt
     /// <summary>
     ///     Default salt size in bytes.
     /// </summary>
-    public const int DefaultSaltSize = 16;
+    public const int DefaultSaltSize = CryptoConstants.SaltSize;
 
     /// <summary>
     ///     Default key size in bytes.

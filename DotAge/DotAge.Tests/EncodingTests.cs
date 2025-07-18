@@ -4,10 +4,23 @@ using DotAge.Core.Utils;
 
 namespace DotAge.Tests;
 
-public class Base64DecodingTests
+/// <summary>
+///     Tests for encoding and decoding utilities including Base64 and Bech32.
+/// </summary>
+public class EncodingTests
 {
     [Fact]
-    public void TestBase64Decoding_UnpaddedBase64()
+    public void Base64Utils_EncodingDecoding_Works()
+    {
+        var data = Encoding.UTF8.GetBytes("Hello, World!");
+        var encoded = Base64Utils.EncodeToString(data);
+        var decoded = Base64Utils.DecodeString(encoded);
+
+        Assert.Equal(data, decoded);
+    }
+
+    [Fact]
+    public void Base64Utils_UnpaddedBase64_Works()
     {
         // Test data that represents a 32-byte X25519 public key
         var testData = new byte[32];
@@ -24,7 +37,7 @@ public class Base64DecodingTests
     }
 
     [Fact]
-    public void TestBase64Decoding_WithPadding()
+    public void Base64Utils_WithPadding_Works()
     {
         // Test data that represents a 32-byte X25519 public key
         var testData = new byte[32];
@@ -41,7 +54,7 @@ public class Base64DecodingTests
     }
 
     [Fact]
-    public void TestBase64Decoding_EdgeCases()
+    public void Base64Utils_EdgeCases_Work()
     {
         // Test various lengths that might cause padding issues
         var testCases = new[]
@@ -83,7 +96,7 @@ public class Base64DecodingTests
     }
 
     [Fact]
-    public void TestBase64Decoding_InvalidInput()
+    public void Base64Utils_InvalidInput_ThrowsException()
     {
         // Test invalid base64 strings
         Assert.Throws<AgeFormatException>(() => Base64Utils.DecodeString("invalid!"));
@@ -115,5 +128,23 @@ public class Base64DecodingTests
             var dec = Base64Utils.DecodeString(encoded);
             Assert.Equal(bytes, dec);
         }
+    }
+
+    [Fact]
+    public void Bech32_EncodingDecoding_Works()
+    {
+        var data = Encoding.UTF8.GetBytes("test data");
+        var encoded = Bech32.Encode("age", data);
+        var (hrp, decoded) = Bech32.Decode(encoded);
+
+        Assert.Equal("age", hrp);
+        Assert.Equal(data, decoded);
+    }
+
+    [Fact]
+    public void Bech32_InvalidInput_ThrowsException()
+    {
+        Assert.Throws<AgeFormatException>(() => Bech32.Decode("invalid"));
+        Assert.Throws<AgeFormatException>(() => Bech32.Decode(""));
     }
 }

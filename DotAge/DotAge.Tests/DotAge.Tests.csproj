@@ -32,11 +32,6 @@
         <ProjectReference Include="..\DotAge.Cli\DotAge.Cli.csproj"/>
     </ItemGroup>
 
-    <ItemGroup>
-        <Content Include="age_passphrase.exp">
-            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-        </Content>
-    </ItemGroup>
 
     <ItemGroup>
         <None Update="xunit.runner.json">

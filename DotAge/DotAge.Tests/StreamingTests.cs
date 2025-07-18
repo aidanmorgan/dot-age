@@ -2,7 +2,10 @@ using DotAge.Core.Crypto;
 
 namespace DotAge.Tests;
 
-public class ChunkedStreamTests
+/// <summary>
+///     Tests for streaming I/O operations including ChunkedStream functionality.
+/// </summary>
+public class StreamingTests
 {
     [Fact]
     public void TestExactChunkSizeEncryptionDecryption()

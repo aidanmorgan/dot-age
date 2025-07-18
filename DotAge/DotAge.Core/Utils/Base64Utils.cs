@@ -1,4 +1,3 @@
-using System.Text;
 using DotAge.Core.Exceptions;
 using Microsoft.Extensions.Logging;
 using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
@@ -10,6 +9,8 @@ namespace DotAge.Core.Utils;
 /// </summary>
 public static class Base64Utils
 {
+    private const int DefaultColumnsPerLine = 64;
+
     private static readonly ILogger Logger = LoggerFactory.CreateLogger(nameof(Base64Utils));
 
     /// <summary>
@@ -70,7 +71,7 @@ public static class Base64Utils
     /// <param name="base64">The base64 string to wrap.</param>
     /// <param name="columnsPerLine">The number of columns per line (64 for age).</param>
     /// <returns>The wrapped base64 string.</returns>
-    public static string WrapBase64(string base64, int columnsPerLine = 64)
+    public static string WrapBase64(string base64, int columnsPerLine = DefaultColumnsPerLine)
     {
         if (base64 == null)
             throw new ArgumentNullException(nameof(base64));

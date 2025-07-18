@@ -1,6 +1,6 @@
 using DotAge.Cli;
 
-namespace DotAge.Tests;
+namespace DotAge.Integration;
 
 public class DotAgeKeyGenCompatibilityTests : IDisposable
 {

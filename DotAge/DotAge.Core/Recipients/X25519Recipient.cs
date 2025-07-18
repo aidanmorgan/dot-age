@@ -13,6 +13,9 @@ namespace DotAge.Core.Recipients;
 /// </summary>
 public class X25519Recipient : IRecipient
 {
+    private const string X25519Info = "age-encryption.org/v1/X25519";
+    private const int WrappingKeySize = 32;
+
     private static readonly Lazy<ILogger<X25519Recipient>> Logger = new(() =>
         LoggerFactory.CreateLogger<X25519Recipient>());
 
@@ -42,7 +45,7 @@ public class X25519Recipient : IRecipient
     {
         ArgumentNullException.ThrowIfNull(privateKey);
         ArgumentNullException.ThrowIfNull(publicKey);
-        
+
         if (privateKey.Length != X25519.KeySize)
             throw new AgeKeyException($"Private key must be {X25519.KeySize} bytes");
 
@@ -53,7 +56,7 @@ public class X25519Recipient : IRecipient
         _publicKey = publicKey;
     }
 
-    public string Type => "X25519";
+    public string Type => StanzaTypes.X25519;
 
     /// <summary>
     ///     Creates a stanza for encrypting a file key.
@@ -66,17 +69,18 @@ public class X25519Recipient : IRecipient
 
         // Generate ephemeral key pair
         var (ephemeralPrivateKey, ephemeralPublicKey) = X25519.GenerateKeyPair();
-        
+
         try
         {
             Logger.Value.LogTrace("Ephemeral private key: {EphemeralPrivateKey}",
                 BitConverter.ToString(ephemeralPrivateKey));
-            Logger.Value.LogTrace("Ephemeral public key: {EphemeralPublicKey}", BitConverter.ToString(ephemeralPublicKey));
+            Logger.Value.LogTrace("Ephemeral public key: {EphemeralPublicKey}",
+                BitConverter.ToString(ephemeralPublicKey));
             Logger.Value.LogTrace("Recipient public key: {RecipientPublicKey}", BitConverter.ToString(_publicKey));
 
             // Perform key agreement
             var sharedSecret = X25519.KeyAgreement(ephemeralPrivateKey, _publicKey);
-            
+
             try
             {
                 Logger.Value.LogTrace("Shared secret: {SharedSecret}", BitConverter.ToString(sharedSecret));
@@ -85,28 +89,29 @@ public class X25519Recipient : IRecipient
                 var salt = new byte[ephemeralPublicKey.Length + _publicKey.Length];
                 Buffer.BlockCopy(ephemeralPublicKey, 0, salt, 0, ephemeralPublicKey.Length);
                 Buffer.BlockCopy(_publicKey, 0, salt, ephemeralPublicKey.Length, _publicKey.Length);
-                
+
                 try
                 {
                     Logger.Value.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
 
                     // Derive wrapping key
-                    var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, "age-encryption.org/v1/X25519", 32);
-                    
+                    var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, X25519Info, WrappingKeySize);
+
                     try
                     {
                         Logger.Value.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
 
                         // Encrypt file key
-                        var nonce = new byte[12]; // All zeros
+                        var nonce = new byte[CryptoConstants.NonceSize]; // All zeros
                         Logger.Value.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
                         Logger.Value.LogTrace("File key (plaintext): {FileKey}", BitConverter.ToString(fileKey));
                         var wrappedKey = ChaCha20Poly1305.Encrypt(wrappingKey, nonce, fileKey);
-                        Logger.Value.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(wrappedKey));
+                        Logger.Value.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}",
+                            BitConverter.ToString(wrappedKey));
 
                         // Create stanza
                         var arguments = new List<string> { Base64Utils.EncodeToString(ephemeralPublicKey) };
-                        var stanza = new Stanza("X25519", arguments, wrappedKey);
+                        var stanza = new Stanza(StanzaTypes.X25519, arguments, wrappedKey);
 
                         return stanza;
                     }
@@ -137,7 +142,7 @@ public class X25519Recipient : IRecipient
 
     public bool SupportsStanzaType(string stanzaType)
     {
-        return string.Equals(stanzaType, "X25519", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(stanzaType, StanzaTypes.X25519, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -207,18 +212,18 @@ public class X25519Recipient : IRecipient
             Logger.Value.LogTrace("Salt: {Salt}", BitConverter.ToString(salt));
 
             // Derive wrapping key
-            var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, "age-encryption.org/v1/X25519", 32);
+            var wrappingKey = Hkdf.DeriveKey(sharedSecret, salt, X25519Info, WrappingKeySize);
             Logger.Value.LogTrace("HKDF wrapping key: {WrappingKey}", BitConverter.ToString(wrappingKey));
 
             // Decrypt file key
-            var nonce = new byte[12]; // All zeros
+            var nonce = new byte[CryptoConstants.NonceSize]; // All zeros
             Logger.Value.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
             Logger.Value.LogTrace("Wrapped key (ciphertext+tag): {WrappedKey}", BitConverter.ToString(stanza.Body));
             var unwrappedKey = ChaCha20Poly1305.Decrypt(wrappingKey, nonce, stanza.Body);
             Logger.Value.LogTrace("Unwrapped file key (plaintext): {UnwrappedKey}",
                 BitConverter.ToString(unwrappedKey));
 
-            if (unwrappedKey.Length != 16)
+            if (unwrappedKey.Length != CryptoConstants.FileKeySize)
                 return null;
 
             return unwrappedKey;

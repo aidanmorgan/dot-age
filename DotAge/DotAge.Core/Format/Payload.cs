@@ -12,6 +12,9 @@ namespace DotAge.Core.Format;
 /// </summary>
 public class Payload
 {
+    private const int StreamKeySize = 32;
+    private const string PayloadInfo = "payload";
+
     private static readonly Lazy<ILogger<Payload>> _logger = new(() => LoggerFactory.CreateLogger<Payload>());
 
     /// <summary>
@@ -20,8 +23,8 @@ public class Payload
     /// <param name="fileKey">The file key (16 bytes).</param>
     public Payload(byte[] fileKey)
     {
-        if (fileKey == null || fileKey.Length != 16)
-            throw new AgeKeyException("File key must be 16 bytes");
+        if (fileKey == null || fileKey.Length != CryptoConstants.FileKeySize)
+            throw new AgeKeyException($"File key must be {CryptoConstants.FileKeySize} bytes");
 
         FileKey = fileKey;
         _logger.Value.LogTrace("Created payload with file key length: {FileKeyLength} bytes", fileKey.Length);
@@ -45,9 +48,10 @@ public class Payload
         if (destination == null)
             throw new ArgumentNullException(nameof(destination));
 
-        // Generate a random nonce (16 bytes) and write it at the beginning of the payload
+        // Generate a random nonce and write it at the beginning of the payload
         // Reference: Go age.go#L98, Rust format.rs
-        var nonce = RandomUtils.GenerateRandomBytes(16);
+        // Note: age uses streamNonceSize = 16, not chacha20poly1305.NonceSize = 12
+        var nonce = RandomUtils.GenerateRandomBytes(CryptoConstants.StreamNonceSize);
         _logger.Value.LogTrace("Generated nonce: {Nonce}", BitConverter.ToString(nonce));
 
         destination.Write(nonce, 0, nonce.Length);
@@ -57,6 +61,7 @@ public class Payload
         var streamKey = DeriveStreamKey(FileKey, nonce);
         _logger.Value.LogTrace("Derived stream key: {StreamKey}", BitConverter.ToString(streamKey));
 
+        // The chunked stream starts with an all-zero nonce and increments it internally
         return ChunkedStream.CreateWriter(streamKey, destination);
     }
 
@@ -72,11 +77,12 @@ public class Payload
         if (source == null)
             throw new ArgumentNullException(nameof(source));
 
-        // Read the nonce from the beginning of the payload (16 bytes)
+        // Read the nonce from the beginning of the payload
         // Reference: Go age.go#L209, Rust format.rs
-        var nonce = new byte[16];
+        // Note: age uses streamNonceSize = 16, not chacha20poly1305.NonceSize = 12
+        var nonce = new byte[CryptoConstants.StreamNonceSize];
         var bytesRead = source.Read(nonce, 0, nonce.Length);
-        if (bytesRead != 16)
+        if (bytesRead != CryptoConstants.StreamNonceSize)
             throw new AgeDecryptionException("Failed to read nonce from payload");
 
         _logger.Value.LogTrace("Read nonce from source stream: {Nonce}", BitConverter.ToString(nonce));
@@ -86,6 +92,7 @@ public class Payload
         var streamKey = DeriveStreamKey(FileKey, nonce);
         _logger.Value.LogTrace("Derived stream key: {StreamKey}", BitConverter.ToString(streamKey));
 
+        // The chunked stream starts with an all-zero nonce and increments it internally
         return ChunkedStream.CreateReader(streamKey, source);
     }
 
@@ -147,23 +154,23 @@ public class Payload
     ///     Reference: https://github.com/FiloSottile/age/blob/main/age.go#L112 and
     ///     https://github.com/str4d/rage/blob/master/age-core/src/format.rs
     /// </summary>
-    /// <param name="fileKey">The file key (16 bytes).</param>
+    /// <param name="fileKey">The file key.</param>
     /// <param name="nonce">The stream nonce (16 bytes).</param>
-    /// <returns>The derived stream key (32 bytes).</returns>
+    /// <returns>The derived stream key.</returns>
     private static byte[] DeriveStreamKey(byte[] fileKey, byte[] nonce)
     {
-        if (fileKey == null || fileKey.Length != 16)
-            throw new AgeKeyException("File key must be 16 bytes");
-        if (nonce == null || nonce.Length != 16)
-            throw new AgeCryptoException("Nonce must be 16 bytes");
+        if (fileKey == null || fileKey.Length != CryptoConstants.FileKeySize)
+            throw new AgeKeyException($"File key must be {CryptoConstants.FileKeySize} bytes");
+        if (nonce == null || nonce.Length != CryptoConstants.StreamNonceSize)
+            throw new AgeCryptoException($"Stream nonce must be {CryptoConstants.StreamNonceSize} bytes");
 
         _logger.Value.LogTrace("Deriving stream key using HKDF");
         _logger.Value.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
         _logger.Value.LogTrace("Nonce: {Nonce}", BitConverter.ToString(nonce));
 
-        // Use HKDF with SHA256, fileKey as IKM (secret), nonce as salt, and "payload" as info
+        // Use HKDF with SHA256, fileKey as IKM (secret), nonce as salt, and payload info
         // Reference: Go hkdf.New(sha256.New, fileKey, nonce, []byte("payload")), Rust hkdf(salt, label, ikm)
-        var streamKey = Hkdf.DeriveKey(fileKey, nonce, "payload", 32);
+        var streamKey = Hkdf.DeriveKey(fileKey, nonce, PayloadInfo, StreamKeySize);
         _logger.Value.LogTrace("Derived stream key: {StreamKey}", BitConverter.ToString(streamKey));
 
         return streamKey;

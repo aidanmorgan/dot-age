@@ -35,11 +35,13 @@ public class ConcurrencyTests
                     for (var operationId = 0; operationId < operationsPerThread; operationId++)
                     {
                         using var cts = new CancellationTokenSource(TestTimeout);
-                        
+
                         var age = new Age();
                         age.AddRecipient(new X25519Recipient(publicKey));
 
-                        var plaintext = Encoding.UTF8.GetBytes($"Thread {capturedThreadId}, Operation {operationId}: {Guid.NewGuid()}");
+                        var plaintext =
+                            Encoding.UTF8.GetBytes(
+                                $"Thread {capturedThreadId}, Operation {operationId}: {Guid.NewGuid()}");
                         var ciphertext = await Task.Run(() => age.Encrypt(plaintext, cts.Token), cts.Token);
 
                         results.Add((capturedThreadId, operationId, ciphertext));
@@ -68,7 +70,8 @@ public class ConcurrencyTests
         {
             Assert.True(result.Length > 0, $"Empty result for Thread {threadId}, Operation {operationId}");
             var resultString = Convert.ToBase64String(result);
-            Assert.True(uniqueResults.Add(resultString), $"Duplicate result found for Thread {threadId}, Operation {operationId}");
+            Assert.True(uniqueResults.Add(resultString),
+                $"Duplicate result found for Thread {threadId}, Operation {operationId}");
         }
     }
 
@@ -79,7 +82,7 @@ public class ConcurrencyTests
         const int threadCount = 10;
         const string testMessage = "This is a test message for concurrent decryption";
         var (privateKey, publicKey) = X25519.GenerateKeyPair();
-        
+
         // Pre-encrypt the message
         var age = new Age();
         age.AddRecipient(new X25519Recipient(publicKey));
@@ -91,13 +94,12 @@ public class ConcurrencyTests
 
         var tasks = new List<Task>();
         for (var threadId = 0; threadId < threadCount; threadId++)
-        {
             tasks.Add(Task.Run(async () =>
             {
                 try
                 {
                     using var cts = new CancellationTokenSource(TestTimeout);
-                    
+
                     var decryptAge = new Age();
                     decryptAge.AddIdentity(new X25519Recipient(privateKey, publicKey));
 
@@ -114,7 +116,6 @@ public class ConcurrencyTests
                     exceptions.Add(ex);
                 }
             }));
-        }
 
         // Act
         await Task.WhenAll(tasks);
@@ -147,13 +148,13 @@ public class ConcurrencyTests
                     for (var operationId = 0; operationId < operationsPerThread; operationId++)
                     {
                         using var cts = new CancellationTokenSource(TestTimeout);
-                        
+
                         var encryptAge = new Age();
                         encryptAge.AddRecipient(new X25519Recipient(publicKey));
 
                         var message = $"Thread {capturedThreadId}, Operation {operationId}: {Guid.NewGuid()}";
                         var plaintext = Encoding.UTF8.GetBytes(message);
-                        
+
                         // Encrypt
                         var ciphertext = await Task.Run(() => encryptAge.Encrypt(plaintext, cts.Token), cts.Token);
                         encryptResults.Add(ciphertext);
@@ -207,7 +208,7 @@ public class ConcurrencyTests
                     try
                     {
                         using var cts = new CancellationTokenSource(TestTimeout);
-                        
+
                         var inputFile = Path.Combine(tempDir, $"input_{capturedThreadId}.txt");
                         var encryptedFile = Path.Combine(tempDir, $"encrypted_{capturedThreadId}.age");
                         var decryptedFile = Path.Combine(tempDir, $"decrypted_{capturedThreadId}.txt");
@@ -266,7 +267,7 @@ public class ConcurrencyTests
                 try
                 {
                     using var cts = new CancellationTokenSource();
-                    
+
                     var age = new Age();
                     age.AddRecipient(new X25519Recipient(publicKey));
 
@@ -275,13 +276,9 @@ public class ConcurrencyTests
 
                     // Cancel after a very short time for some threads
                     if (capturedThreadId % 3 == 0)
-                    {
                         cts.CancelAfter(1); // Cancel almost immediately
-                    }
                     else
-                    {
                         cts.CancelAfter(5000); // Give enough time to complete
-                    }
 
                     try
                     {
@@ -296,11 +293,6 @@ public class ConcurrencyTests
                 catch (OperationCanceledException)
                 {
                     cancellationResults.Add(true);
-                }
-                catch (Exception)
-                {
-                    // Other exceptions are unexpected in this test
-                    throw;
                 }
             }));
         }
@@ -324,7 +316,6 @@ public class ConcurrencyTests
 
         var tasks = new List<Task>();
         for (var threadId = 0; threadId < threadCount; threadId++)
-        {
             tasks.Add(Task.Run(() =>
             {
                 try
@@ -347,7 +338,6 @@ public class ConcurrencyTests
                     exceptions.Add(ex);
                 }
             }));
-        }
 
         // Act
         await Task.WhenAll(tasks);
@@ -369,7 +359,6 @@ public class ConcurrencyTests
 
         var tasks = new List<Task>();
         for (var threadId = 0; threadId < threadCount; threadId++)
-        {
             tasks.Add(Task.Run(() =>
             {
                 try
@@ -392,7 +381,6 @@ public class ConcurrencyTests
                     exceptions.Add(ex);
                 }
             }));
-        }
 
         // Act
         await Task.WhenAll(tasks);
@@ -426,7 +414,6 @@ public class ConcurrencyTests
 
         var tasks = new List<Task>();
         for (var threadId = 0; threadId < threadCount; threadId++)
-        {
             tasks.Add(Task.Run(() =>
             {
                 try
@@ -437,14 +424,12 @@ public class ConcurrencyTests
                     var addTasks = new List<Task>();
 
                     for (var i = 0; i < 5; i++)
-                    {
                         addTasks.Add(Task.Run(() =>
                         {
                             var (privateKey, publicKey) = X25519.GenerateKeyPair();
                             age.AddRecipient(new X25519Recipient(publicKey));
                             age.AddIdentity(new X25519Recipient(privateKey, publicKey));
                         }));
-                    }
 
                     Task.WaitAll(addTasks.ToArray());
 
@@ -457,7 +442,6 @@ public class ConcurrencyTests
                     exceptions.Add(ex);
                 }
             }));
-        }
 
         // Act
         await Task.WhenAll(tasks);

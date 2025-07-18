@@ -3,7 +3,7 @@ using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
 using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
-namespace DotAge.Tests;
+namespace DotAge.Integration;
 
 /// <summary>
 ///     Integration tests to validate CLI compatibility between age, rage, and dotage implementations.
@@ -34,11 +34,11 @@ public class CliCompatibilityTests : IDisposable
         _logger.LogInformation("Test 1: Basic encryption with single recipient");
 
         // Generate test data
-        var testData = Encoding.UTF8.GetBytes("Hello, this is test data for CLI encryption!");
+        var testData = Encoding.UTF8.GetBytes("Hello, this is test data for basic CLI encryption!");
         var testDataFile = Path.Combine(_tempDir, "test1_plaintext.txt");
         File.WriteAllBytes(testDataFile, testData);
 
-        // Generate a key pair using dotage-keygen
+        // Generate a key pair
         var ageKeyFile = Path.Combine(_tempDir, "test1_key.txt");
         await TestUtils.RunDotAgeKeyGenWithOutputAsync(ageKeyFile, _logger);
 
@@ -52,17 +52,25 @@ public class CliCompatibilityTests : IDisposable
                 _logger);
         Assert.Equal(0, result.ExitCode);
 
-        // Decrypt with age CLI to verify compatibility
+        // Verify the encrypted file was created
+        Assert.True(File.Exists(dotageEncryptedFile), $"Encrypted file {dotageEncryptedFile} was not created");
+
+        // Decrypt with age CLI
         var ageDecryptedFile = Path.Combine(_tempDir, "test1_age_decrypted.txt");
         var ageResult = await TestUtils.RunAgeAsync($"-d -i {ageKeyFile} -o {ageDecryptedFile} {dotageEncryptedFile}",
             null, _logger);
+
         if (ageResult.ExitCode != 0)
         {
-            _logger.LogError($"Age CLI decryption failed with exit code {ageResult.ExitCode}");
-            _logger.LogError($"Age CLI stdout: {ageResult.Stdout}");
-            _logger.LogError($"Age CLI stderr: {ageResult.Stderr}");
-            Assert.Equal(0, ageResult.ExitCode);
+            _logger.LogError("Age CLI decryption failed with exit code {ExitCode}", ageResult.ExitCode);
+            _logger.LogError("Age CLI stdout: {Stdout}", ageResult.Stdout);
+            _logger.LogError("Age CLI stderr: {Stderr}", ageResult.Stderr);
         }
+
+        Assert.Equal(0, ageResult.ExitCode);
+
+        // Verify the decrypted file was created
+        Assert.True(File.Exists(ageDecryptedFile), $"Decrypted file {ageDecryptedFile} was not created");
 
         // Verify the decrypted data matches the original
         var decryptedData = File.ReadAllBytes(ageDecryptedFile);
@@ -77,11 +85,11 @@ public class CliCompatibilityTests : IDisposable
         _logger.LogInformation("Test 2: Basic decryption with identity file");
 
         // Generate test data
-        var testData = Encoding.UTF8.GetBytes("Hello, this is test data for CLI decryption!");
+        var testData = Encoding.UTF8.GetBytes("Hello, this is test data for basic CLI decryption!");
         var testDataFile = Path.Combine(_tempDir, "test2_plaintext.txt");
         File.WriteAllBytes(testDataFile, testData);
 
-        // Generate a key pair using dotage-keygen
+        // Generate a key pair
         var ageKeyFile = Path.Combine(_tempDir, "test2_key.txt");
         await TestUtils.RunDotAgeKeyGenWithOutputAsync(ageKeyFile, _logger);
 
@@ -98,6 +106,9 @@ public class CliCompatibilityTests : IDisposable
             await TestUtils.RunDotAgeAsync($"decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {ageEncryptedFile}", null,
                 _logger);
         Assert.Equal(0, result.ExitCode);
+
+        // Verify the output file was created
+        Assert.True(File.Exists(dotageDecryptedFile), $"Output file {dotageDecryptedFile} was not created");
 
         // Verify the decrypted data matches the original
         var decryptedData = File.ReadAllBytes(dotageDecryptedFile);
@@ -134,7 +145,20 @@ public class CliCompatibilityTests : IDisposable
 
         // Decrypt with age CLI using either key
         var ageDecryptedFile = Path.Combine(_tempDir, "test3_age_decrypted.txt");
-        await TestUtils.RunAgeAsync($"-d -i {key1File} -o {ageDecryptedFile} {dotageEncryptedFile}", null, _logger);
+        var ageResult = await TestUtils.RunAgeAsync($"-d -i {key1File} -o {ageDecryptedFile} {dotageEncryptedFile}",
+            null, _logger);
+
+        if (ageResult.ExitCode != 0)
+        {
+            _logger.LogError("Age CLI decryption failed with exit code {ExitCode}", ageResult.ExitCode);
+            _logger.LogError("Age CLI stdout: {Stdout}", ageResult.Stdout);
+            _logger.LogError("Age CLI stderr: {Stderr}", ageResult.Stderr);
+        }
+
+        Assert.Equal(0, ageResult.ExitCode);
+
+        // Verify the decrypted file was created
+        Assert.True(File.Exists(ageDecryptedFile), $"Decrypted file {ageDecryptedFile} was not created");
 
         // Verify the decrypted data matches the original
         var decryptedData = File.ReadAllBytes(ageDecryptedFile);
@@ -174,7 +198,20 @@ public class CliCompatibilityTests : IDisposable
 
         // Decrypt with age CLI using either key
         var ageDecryptedFile = Path.Combine(_tempDir, "test4_age_decrypted.txt");
-        await TestUtils.RunAgeAsync($"-d -i {key1File} -o {ageDecryptedFile} {dotageEncryptedFile}", null, _logger);
+        var ageResult = await TestUtils.RunAgeAsync($"-d -i {key1File} -o {ageDecryptedFile} {dotageEncryptedFile}",
+            null, _logger);
+
+        if (ageResult.ExitCode != 0)
+        {
+            _logger.LogError("Age CLI decryption failed with exit code {ExitCode}", ageResult.ExitCode);
+            _logger.LogError("Age CLI stdout: {Stdout}", ageResult.Stdout);
+            _logger.LogError("Age CLI stderr: {Stderr}", ageResult.Stderr);
+        }
+
+        Assert.Equal(0, ageResult.ExitCode);
+
+        // Verify the decrypted file was created
+        Assert.True(File.Exists(ageDecryptedFile), $"Decrypted file {ageDecryptedFile} was not created");
 
         // Verify the decrypted data matches the original
         var decryptedData = File.ReadAllBytes(ageDecryptedFile);
@@ -219,7 +256,20 @@ public class CliCompatibilityTests : IDisposable
 
         // Decrypt with age CLI using any of the keys
         var ageDecryptedFile = Path.Combine(_tempDir, "test5_age_decrypted.txt");
-        await TestUtils.RunAgeAsync($"-d -i {key2File} -o {ageDecryptedFile} {dotageEncryptedFile}", null, _logger);
+        var ageResult = await TestUtils.RunAgeAsync($"-d -i {key2File} -o {ageDecryptedFile} {dotageEncryptedFile}",
+            null, _logger);
+
+        if (ageResult.ExitCode != 0)
+        {
+            _logger.LogError("Age CLI decryption failed with exit code {ExitCode}", ageResult.ExitCode);
+            _logger.LogError("Age CLI stdout: {Stdout}", ageResult.Stdout);
+            _logger.LogError("Age CLI stderr: {Stderr}", ageResult.Stderr);
+        }
+
+        Assert.Equal(0, ageResult.ExitCode);
+
+        // Verify the decrypted file was created
+        Assert.True(File.Exists(ageDecryptedFile), $"Decrypted file {ageDecryptedFile} was not created");
 
         // Verify the decrypted data matches the original
         var decryptedData = File.ReadAllBytes(ageDecryptedFile);
@@ -298,6 +348,9 @@ public class CliCompatibilityTests : IDisposable
             $"decrypt -i {key1File} -i {key2File} -o {dotageDecryptedFile} {ageEncryptedFile}", null, _logger);
         Assert.Equal(0, result.ExitCode);
 
+        // Verify the output file was created
+        Assert.True(File.Exists(dotageDecryptedFile), $"Output file {dotageDecryptedFile} was not created");
+
         // Verify the decrypted data matches the original
         var decryptedData = File.ReadAllBytes(dotageDecryptedFile);
         Assert.Equal(testData, decryptedData);
@@ -331,7 +384,20 @@ public class CliCompatibilityTests : IDisposable
 
         // Decrypt with age CLI
         var ageDecryptedFile = Path.Combine(_tempDir, "test8_age_decrypted.txt");
-        await TestUtils.RunAgeAsync($"-d -i {ageKeyFile} -o {ageDecryptedFile} {dotageEncryptedFile}", null, _logger);
+        var ageResult = await TestUtils.RunAgeAsync($"-d -i {ageKeyFile} -o {ageDecryptedFile} {dotageEncryptedFile}",
+            null, _logger);
+
+        if (ageResult.ExitCode != 0)
+        {
+            _logger.LogError("Age CLI decryption failed with exit code {ExitCode}", ageResult.ExitCode);
+            _logger.LogError("Age CLI stdout: {Stdout}", ageResult.Stdout);
+            _logger.LogError("Age CLI stderr: {Stderr}", ageResult.Stderr);
+        }
+
+        Assert.Equal(0, ageResult.ExitCode);
+
+        // Verify the decrypted file was created
+        Assert.True(File.Exists(ageDecryptedFile), $"Decrypted file {ageDecryptedFile} was not created");
 
         // Verify the decrypted data matches the original
         var decryptedData = File.ReadAllBytes(ageDecryptedFile);
@@ -363,10 +429,12 @@ public class CliCompatibilityTests : IDisposable
 
         // Decrypt with dotage CLI using explicit decrypt flag
         var dotageDecryptedFile = Path.Combine(_tempDir, "test9_dotage_decrypted.txt");
-        var result =
-            await TestUtils.RunDotAgeAsync(
-                $"decrypt --decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {ageEncryptedFile}", null, _logger);
+        var result = await TestUtils.RunDotAgeAsync(
+            $"decrypt -i {ageKeyFile} -o {dotageDecryptedFile} {ageEncryptedFile}", null, _logger);
         Assert.Equal(0, result.ExitCode);
+
+        // Verify the output file was created
+        Assert.True(File.Exists(dotageDecryptedFile), $"Output file {dotageDecryptedFile} was not created");
 
         // Verify the decrypted data matches the original
         var decryptedData = File.ReadAllBytes(dotageDecryptedFile);
@@ -415,7 +483,22 @@ public class CliCompatibilityTests : IDisposable
         Assert.Equal(0, result.ExitCode);
 
         var ageDecryptedFile = Path.Combine(_tempDir, "test12_age_decrypted.txt");
-        await TestUtils.RunAgeAsync($"-d -i {ageKeyFile} -o {ageDecryptedFile} {dotageEncryptedFile}", null, _logger);
+        var ageResult = await TestUtils.RunAgeAsync($"-d -i {ageKeyFile} -o {ageDecryptedFile} {dotageEncryptedFile}",
+            null, _logger);
+
+        if (ageResult.ExitCode != 0)
+        {
+            _logger.LogError("Age CLI decryption failed with exit code {ExitCode}", ageResult.ExitCode);
+            _logger.LogError("Age CLI stdout: {Stdout}", ageResult.Stdout);
+            _logger.LogError("Age CLI stderr: {Stderr}", ageResult.Stderr);
+        }
+
+        Assert.Equal(0, ageResult.ExitCode);
+
+        // Verify the decrypted file was created
+        Assert.True(File.Exists(ageDecryptedFile), $"Decrypted file {ageDecryptedFile} was not created");
+
+        // Verify the decrypted data matches the original
         var decryptedData = File.ReadAllBytes(ageDecryptedFile);
         Assert.Equal(testData, decryptedData);
 

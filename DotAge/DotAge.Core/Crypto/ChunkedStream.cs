@@ -15,32 +15,37 @@ public static class ChunkedStream
     /// </summary>
     public const int ChunkSize = 65536;
 
+    private const int LastChunkFlagPosition = 11; // This should be the last byte (11 for 12-byte nonce)
+    private const byte LastChunkFlagValue = 0x01;
+
     private static readonly Lazy<ILogger> Logger = new(() => LoggerFactory.CreateLogger(nameof(ChunkedStream)));
 
     /// <summary>
-    ///     Creates a ChunkedStreamWriter for encrypting data in chunks.
+    ///     Creates a writer for encrypting chunked data.
     /// </summary>
     /// <param name="key">The encryption key.</param>
     /// <param name="output">The output stream.</param>
-    /// <returns>A ChunkedStreamWriter instance.</returns>
-    public static ChunkedStreamWriter CreateWriter(byte[] key, Stream output)
+    /// <param name="initialNonce">The initial nonce for the stream.</param>
+    /// <returns>A chunked stream writer.</returns>
+    public static ChunkedStreamWriter CreateWriter(byte[] key, Stream output, byte[]? initialNonce = null)
     {
-        return new ChunkedStreamWriter(key, output);
+        return new ChunkedStreamWriter(key, output, initialNonce);
     }
 
     /// <summary>
-    ///     Creates a ChunkedStreamReader for decrypting data in chunks.
+    ///     Creates a reader for decrypting chunked data.
     /// </summary>
     /// <param name="key">The decryption key.</param>
     /// <param name="input">The input stream.</param>
-    /// <returns>A ChunkedStreamReader instance.</returns>
-    public static ChunkedStreamReader CreateReader(byte[] key, Stream input)
+    /// <param name="initialNonce">The initial nonce for the stream.</param>
+    /// <returns>A chunked stream reader.</returns>
+    public static ChunkedStreamReader CreateReader(byte[] key, Stream input, byte[]? initialNonce = null)
     {
-        return new ChunkedStreamReader(key, input);
+        return new ChunkedStreamReader(key, input, initialNonce);
     }
 
     /// <summary>
-    ///     Increments a 12-byte nonce in little-endian format.
+    ///     Increments a nonce in little-endian format.
     ///     Following age spec: increment the first 11 bytes (88-bit counter), leave byte 11 for last chunk flag.
     ///     Reference: https://github.com/FiloSottile/age/blob/main/internal/stream/stream.go#L109 and
     ///     https://github.com/str4d/rage/blob/master/age-core/src/stream.rs
@@ -68,7 +73,7 @@ public static class ChunkedStream
     /// <param name="nonce">The nonce to modify (modified in place).</param>
     private static void SetLastChunkFlag(byte[] nonce)
     {
-        nonce[11] = 0x01; // Set last chunk flag as per age spec
+        nonce[LastChunkFlagPosition] = LastChunkFlagValue; // Set last chunk flag as per age spec
     }
 
     /// <summary>
@@ -97,12 +102,22 @@ public static class ChunkedStream
         private bool _closed;
         private bool _disposed;
 
-        public ChunkedStreamWriter(byte[] key, Stream output)
+        public ChunkedStreamWriter(byte[] key, Stream output, byte[]? initialNonce = null)
         {
             _key = (byte[])key.Clone();
             _output = output ?? throw new ArgumentNullException(nameof(output));
             _buffer = new byte[ChunkSize];
-            _nonce = new byte[12];
+            _nonce = new byte[CryptoConstants.NonceSize];
+
+            // Initialize nonce from parameter or use zeros
+            if (initialNonce != null)
+            {
+                if (initialNonce.Length != CryptoConstants.NonceSize)
+                    throw new ArgumentException($"Initial nonce must be {CryptoConstants.NonceSize} bytes");
+                initialNonce.CopyTo(_nonce, 0);
+            }
+            // Otherwise, _nonce remains all zeros as per age spec
+
             _bufferLength = 0;
             _disposed = false;
             _closed = false;
@@ -209,12 +224,22 @@ public static class ChunkedStream
         private bool _trailingDataChecked;
         private int _unreadLength;
 
-        public ChunkedStreamReader(byte[] key, Stream input)
+        public ChunkedStreamReader(byte[] key, Stream input, byte[]? initialNonce = null)
         {
             _key = (byte[])key.Clone();
             _input = input ?? throw new ArgumentNullException(nameof(input));
             _buffer = new byte[ChunkSize + 16];
-            _nonce = new byte[12];
+            _nonce = new byte[CryptoConstants.NonceSize];
+
+            // Initialize nonce from parameter or use zeros
+            if (initialNonce != null)
+            {
+                if (initialNonce.Length != CryptoConstants.NonceSize)
+                    throw new ArgumentException($"Initial nonce must be {CryptoConstants.NonceSize} bytes");
+                initialNonce.CopyTo(_nonce, 0);
+            }
+            // Otherwise, _nonce remains all zeros as per age spec
+
             _unread = new byte[ChunkSize];
             _unreadLength = 0;
             _disposed = false;
@@ -284,8 +309,11 @@ public static class ChunkedStream
                 return null;
             }
 
-            var encryptedSize = ChunkSize + 16;
+            var encryptedSize = ChunkSize + ChaCha20Poly1305.TagSize;
             var n = 0;
+            var isLast = false;
+
+            // Try to read a full encrypted chunk (like Go's io.ReadFull)
             while (n < encryptedSize)
             {
                 var read = _input.Read(_buffer, n, encryptedSize - n);
@@ -297,57 +325,53 @@ public static class ChunkedStream
                         return null;
                     }
 
+                    // Partial read - this is the last chunk
+                    isLast = true;
                     break;
                 }
 
                 n += read;
             }
 
-            // Determine if this is the last chunk based on read size (matching Go implementation)
-            var isLast = n < encryptedSize;
-            if (isLast)
-            {
-                // Check for empty last chunk (only 16 bytes = just the auth tag)
-                if (!IsNonceZero(_nonce) && n == 16) throw new AgeFormatException("last chunk is empty");
-                // Set the last chunk flag immediately (matching Go implementation)
-                SetLastChunkFlag(_nonce);
-            }
-            else
-            {
-                // If we read exactly a full chunk, we need to check if there's more data
-                // Try to read one more byte to see if this is actually the last chunk
-                var nextByte = _input.ReadByte();
-                if (nextByte == -1)
-                {
-                    // No more data, this was the last chunk
-                    isLast = true;
-                    SetLastChunkFlag(_nonce);
-                }
-                else
-                {
-                    // Put the byte back for the next read
-                    _input.Position = _input.Position - 1;
-                }
-            }
+            Logger.Value.LogTrace("Read chunk: {ReadBytes} bytes, expected {ExpectedBytes}, isLast: {IsLast}", n,
+                encryptedSize, isLast);
+
+            // Check for empty last chunk (only tag size bytes = just the auth tag)
+            if (!IsNonceZero(_nonce) && n == ChaCha20Poly1305.TagSize)
+                throw new AgeFormatException("last chunk is empty");
 
             var chunkData = new byte[n];
             _buffer.AsSpan(0, n).CopyTo(chunkData);
 
-            // First try with the current nonce (matching Go implementation)
+            // Create a copy of the nonce for this chunk
+            var chunkNonce = new byte[CryptoConstants.NonceSize];
+            _nonce.CopyTo(chunkNonce, 0);
+
+            // If this is the last chunk, set the last chunk flag
+            if (isLast) SetLastChunkFlag(chunkNonce);
+
+            Logger.Value.LogTrace("Attempting decryption with nonce: {Nonce}, isLast: {IsLast}",
+                BitConverter.ToString(chunkNonce), isLast);
+
+            // Try decryption
             byte[] decrypted;
             try
             {
-                decrypted = ChaCha20Poly1305.Decrypt(_key, _nonce, chunkData);
+                decrypted = ChaCha20Poly1305.Decrypt(_key, chunkNonce, chunkData);
+                Logger.Value.LogTrace("Decryption successful");
             }
-            catch (AgeCryptoException)
+            catch (AgeCryptoException ex)
             {
-                // If decryption failed and this is not already marked as last, try with last chunk flag
+                Logger.Value.LogTrace("Decryption failed: {Error}", ex.Message);
+
+                // If this wasn't marked as last chunk, try with last chunk flag
                 if (!isLast)
                 {
-                    // Try again with the last chunk flag
-                    SetLastChunkFlag(_nonce);
-                    decrypted = ChaCha20Poly1305.Decrypt(_key, _nonce, chunkData);
+                    Logger.Value.LogTrace("Trying with last chunk flag");
+                    SetLastChunkFlag(chunkNonce);
+                    decrypted = ChaCha20Poly1305.Decrypt(_key, chunkNonce, chunkData);
                     isLast = true;
+                    Logger.Value.LogTrace("Decryption successful with last chunk flag");
                 }
                 else
                 {
@@ -355,6 +379,7 @@ public static class ChunkedStream
                 }
             }
 
+            // Increment the nonce for the next chunk
             IncrementNonce(_nonce);
             if (isLast) _isLastChunk = true;
             return decrypted;

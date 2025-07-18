@@ -1,14 +1,15 @@
 using System.Text;
-using DotAge.Core;
 using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
-using DotAge.Core.Format;
 using DotAge.Core.Recipients;
 using DotAge.Core.Utils;
 
 namespace DotAge.Tests;
 
-public class UnitTests
+/// <summary>
+///     Tests for cryptographic operations including X25519, ChaCha20Poly1305, Scrypt, and HKDF.
+/// </summary>
+public class CryptoTests
 {
     [Fact]
     public void X25519_KeyGeneration_ProducesValidKeys()
@@ -69,6 +70,28 @@ public class UnitTests
     }
 
     [Fact]
+    public void ChaCha20Poly1305_InvalidKeySize_ThrowsException()
+    {
+        var nonce = RandomUtils.GenerateRandomBytes(12);
+        var plaintext = Encoding.UTF8.GetBytes("test");
+        Assert.Throws<AgeCryptoException>(() =>
+            ChaCha20Poly1305.Encrypt(new byte[31], nonce, plaintext));
+        Assert.Throws<AgeCryptoException>(() =>
+            ChaCha20Poly1305.Encrypt(new byte[33], nonce, plaintext));
+    }
+
+    [Fact]
+    public void ChaCha20Poly1305_InvalidNonceSize_ThrowsException()
+    {
+        var key = RandomUtils.GenerateRandomBytes(32);
+        var plaintext = Encoding.UTF8.GetBytes("test");
+        Assert.Throws<AgeCryptoException>(() =>
+            ChaCha20Poly1305.Encrypt(key, new byte[11], plaintext));
+        Assert.Throws<AgeCryptoException>(() =>
+            ChaCha20Poly1305.Encrypt(key, new byte[13], plaintext));
+    }
+
+    [Fact]
     public void Scrypt_KeyDerivation_ProducesConsistentResults()
     {
         var password = "test-password";
@@ -80,107 +103,16 @@ public class UnitTests
     }
 
     [Fact]
-    public void Base64Utils_EncodingDecoding_Works()
+    public void Scrypt_InvalidParameters_ThrowsException()
     {
-        var data = Encoding.UTF8.GetBytes("Hello, World!");
-        var encoded = Base64Utils.EncodeToString(data);
-        var decoded = Base64Utils.DecodeString(encoded);
-
-        Assert.Equal(data, decoded);
-    }
-
-    [Fact]
-    public void Bech32_EncodingDecoding_Works()
-    {
-        var data = Encoding.UTF8.GetBytes("test data");
-        var encoded = Bech32.Encode("age", data);
-        var (hrp, decoded) = Bech32.Decode(encoded);
-
-        Assert.Equal("age", hrp);
-        Assert.Equal(data, decoded);
-    }
-
-    [Fact]
-    public void Header_Parsing_Works()
-    {
-        // Valid stanza: 16-byte base64 body ("AAAAAAAAAAAAAAAAAAAAAA==")
-        var headerText = "age-encryption.org/v1\n-> X25519 test-arg\nAAAAAAAAAAAAAAAAAAAAAA==\n";
-        var header = Header.Decode(headerText);
-
-        Assert.Equal("age-encryption.org/v1", Header.Version);
-        Assert.Single(header.Stanzas);
-        Assert.Equal("X25519", header.Stanzas[0].Type);
-    }
-
-    [Fact]
-    public void Header_Serialization_Works()
-    {
-        var stanza = new Stanza("X25519", new[] { "test-arg" }, Convert.FromBase64String("dGVzdA=="));
-        var header = new Header(new[] { stanza });
-
-        var serialized = header.Encode();
-        var parsed = Header.Decode(serialized);
-
-        Assert.Equal(Header.Version, Header.Version);
-        Assert.Equal(header.Stanzas[0].Type, parsed.Stanzas[0].Type);
-    }
-
-    [Fact]
-    public void X25519Recipient_EncryptionDecryption_Works()
-    {
-        var (privateKey, publicKey) = X25519.GenerateKeyPair();
-        var recipient = new X25519Recipient(publicKey);
-        var fileKey = RandomUtils.GenerateRandomBytes(16);
-
-        var stanza = recipient.CreateStanza(fileKey);
-        var identity = new X25519Recipient(privateKey, publicKey);
-        var unwrappedKey = identity.UnwrapKey(stanza);
-
-        Assert.Equal(fileKey, unwrappedKey);
-    }
-
-    [Fact]
-    public void ScryptRecipient_EncryptionDecryption_Works()
-    {
-        var password = "test-password";
-        var recipient = new ScryptRecipient(password);
-        var fileKey = RandomUtils.GenerateRandomBytes(16);
-
-        var stanza = recipient.CreateStanza(fileKey);
-        var identity = new ScryptIdentity(password);
-        var unwrappedKey = identity.UnwrapKey(stanza);
-
-        Assert.Equal(fileKey, unwrappedKey);
-    }
-
-    [Fact]
-    public void Age_EncryptionDecryption_Works()
-    {
-        var (privateKey, publicKey) = X25519.GenerateKeyPair();
-        var age = new Age();
-        age.AddRecipient(new X25519Recipient(publicKey));
-
-        var plaintext = "Hello, World!";
-        var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
-
-        var ciphertext = age.Encrypt(plaintextBytes);
-        var decryptAge = new Age();
-        decryptAge.AddIdentity(new X25519Recipient(privateKey, publicKey));
-        var decryptedBytes = decryptAge.Decrypt(ciphertext);
-
-        var decryptedText = Encoding.UTF8.GetString(decryptedBytes);
-        Assert.Equal(plaintext, decryptedText);
-    }
-
-    [Fact]
-    public void RandomUtils_GeneratesRandomBytes()
-    {
-        var bytes1 = RandomUtils.GenerateRandomBytes(32);
-        var bytes2 = RandomUtils.GenerateRandomBytes(32);
-
-        Assert.Equal(32, bytes1.Length);
-        Assert.Equal(32, bytes2.Length);
-        Assert.NotEqual(bytes1, bytes2);
+        var password = "test";
+        var salt = RandomUtils.GenerateRandomBytes(16);
+        Assert.Throws<AgeCryptoException>(() =>
+            Scrypt.DeriveKey(password, salt, 0, 8));
+        Assert.Throws<AgeCryptoException>(() =>
+            Scrypt.DeriveKey(password, salt, 31, 0));
+        Assert.Throws<AgeCryptoException>(() =>
+            Scrypt.DeriveKey(password, salt, 31, 8, 0));
     }
 
     [Fact]
@@ -198,21 +130,67 @@ public class UnitTests
     }
 
     [Fact]
-    public void Age_ThrowsOnInvalidKey()
+    public void Hkdf_InvalidParameters_ThrowsException()
     {
-        var age = new Age();
-
-        Assert.Throws<AgeKeyException>(() =>
-            age.AddRecipient(new X25519Recipient(new byte[31]))); // Wrong key size
+        var salt = RandomUtils.GenerateRandomBytes(32);
+        var ikm = RandomUtils.GenerateRandomBytes(32);
+        var info = "test";
+        Assert.Throws<ArgumentException>(() =>
+            Hkdf.DeriveKey(salt, ikm, info, 0));
+        Assert.Throws<ArgumentException>(() =>
+            Hkdf.DeriveKey(salt, ikm, info, -1));
     }
 
     [Fact]
-    public void Age_ThrowsOnInvalidFile()
+    public void X25519Recipient_EncryptionDecryption_Works()
     {
-        var age = new Age();
-        var invalidData = new byte[] { 0x00, 0x01, 0x02, 0x03 };
-        age.AddIdentity(new X25519Recipient(RandomUtils.GenerateRandomBytes(32), RandomUtils.GenerateRandomBytes(32)));
-        Assert.Throws<AgeFormatException>(() =>
-            age.Decrypt(invalidData));
+        var (privateKey, publicKey) = X25519.GenerateKeyPair();
+        var recipient = new X25519Recipient(publicKey);
+        var fileKey = RandomUtils.GenerateRandomBytes(16);
+
+        var stanza = recipient.CreateStanza(fileKey);
+        var identity = new X25519Recipient(privateKey, publicKey);
+        var unwrappedKey = identity.UnwrapKey(stanza);
+
+        Assert.Equal(fileKey, unwrappedKey);
+    }
+
+    [Fact]
+    public void X25519Recipient_InvalidKeySize_ThrowsException()
+    {
+        Assert.Throws<AgeKeyException>(() => new X25519Recipient(new byte[31]));
+        Assert.Throws<AgeKeyException>(() => new X25519Recipient(new byte[33]));
+    }
+
+    [Fact]
+    public void ScryptRecipient_EncryptionDecryption_Works()
+    {
+        var password = "test-password";
+        var recipient = new ScryptRecipient(password);
+        var fileKey = RandomUtils.GenerateRandomBytes(16);
+
+        var stanza = recipient.CreateStanza(fileKey);
+        var identity = new ScryptIdentity(password);
+        var unwrappedKey = identity.UnwrapKey(stanza);
+
+        Assert.Equal(fileKey, unwrappedKey);
+    }
+
+    [Fact]
+    public void ScryptRecipient_EmptyPassword_ThrowsException()
+    {
+        Assert.Throws<AgeKeyException>(() => new ScryptRecipient(""));
+        Assert.Throws<AgeKeyException>(() => new ScryptRecipient(null!));
+    }
+
+    [Fact]
+    public void RandomUtils_GeneratesRandomBytes()
+    {
+        var bytes1 = RandomUtils.GenerateRandomBytes(32);
+        var bytes2 = RandomUtils.GenerateRandomBytes(32);
+
+        Assert.Equal(32, bytes1.Length);
+        Assert.Equal(32, bytes2.Length);
+        Assert.NotEqual(bytes1, bytes2);
     }
 }

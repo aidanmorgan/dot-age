@@ -6,7 +6,7 @@ using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
 using LoggerFactory = DotAge.Core.Logging.LoggerFactory;
 
-namespace DotAge.Tests;
+namespace DotAge.Integration;
 
 /// <summary>
 ///     Integration tests to validate compatibility between age and dotage implementations.

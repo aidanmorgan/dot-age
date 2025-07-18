@@ -20,13 +20,13 @@ public static class SecureMemoryUtils
 
         // First pass: overwrite with random data
         RandomNumberGenerator.Fill(sensitiveData);
-        
+
         // Second pass: overwrite with zeros
         Array.Clear(sensitiveData, 0, sensitiveData.Length);
-        
+
         // Third pass: overwrite with 0xFF
         Array.Fill(sensitiveData, (byte)0xFF);
-        
+
         // Final pass: overwrite with zeros again
         Array.Clear(sensitiveData, 0, sensitiveData.Length);
     }
@@ -43,13 +43,13 @@ public static class SecureMemoryUtils
 
         // First pass: overwrite with random data
         RandomNumberGenerator.Fill(sensitiveData);
-        
+
         // Second pass: overwrite with zeros
         sensitiveData.Clear();
-        
+
         // Third pass: overwrite with 0xFF
         sensitiveData.Fill(0xFF);
-        
+
         // Final pass: overwrite with zeros again
         sensitiveData.Clear();
     }

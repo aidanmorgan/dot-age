@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using DotAge.Core.Crypto;
 using DotAge.Core.Exceptions;
 using DotAge.Core.Utils;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,10 @@ public class Header
 {
     // The age file format version
     public const string Version = "age-encryption.org/v1";
+    private const int MacKeySize = 32;
+    private const int MacSize = 32;
+    private const string HeaderInfo = "header";
+
     private static readonly Lazy<ILogger<Header>> _logger = new(() => LoggerFactory.CreateLogger<Header>());
 
     /// <summary>
@@ -86,10 +91,10 @@ public class Header
         // Add the MAC line if available
         if (Mac != null)
         {
-            // Enforce MAC is 32 bytes (age/rage compatibility: 32 bytes = 43 base64 chars, unpadded)
-            if (Mac.Length != 32)
+            // Enforce MAC is correct size (age/rage compatibility)
+            if (Mac.Length != MacSize)
                 throw new AgeFormatException(
-                    $"MAC must be 32 bytes (got {Mac.Length}) for age/rage compatibility");
+                    $"MAC must be {MacSize} bytes (got {Mac.Length}) for age/rage compatibility");
 
             _logger.Value.LogTrace("MAC value length: {MacLength} bytes", Mac.Length);
 
@@ -128,7 +133,7 @@ public class Header
         foreach (var stanza in Stanzas)
         {
             // Skip grease stanzas for MAC calculation
-            if (stanza.Type.EndsWith("-grease", StringComparison.Ordinal))
+            if (stanza.Type.EndsWith(StanzaTypes.GreaseSuffix, StringComparison.Ordinal))
             {
                 _logger.Value.LogTrace("Skipping grease stanza of type {StanzaType} for MAC calculation", stanza.Type);
                 continue;
@@ -156,15 +161,15 @@ public class Header
     /// <param name="fileKey">The file key to use for MAC calculation.</param>
     public void CalculateMac(byte[] fileKey)
     {
-        if (fileKey == null || fileKey.Length != 16)
-            throw new AgeKeyException("File key must be 16 bytes");
+        if (fileKey == null || fileKey.Length != CryptoConstants.FileKeySize)
+            throw new AgeKeyException($"File key must be {CryptoConstants.FileKeySize} bytes");
 
         _logger.Value.LogTrace("Calculating header MAC");
         _logger.Value.LogTrace("File key length: {FileKeyLength} bytes", fileKey.Length);
         _logger.Value.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
 
         // Derive the MAC key using HKDF
-        var macKey = Hkdf.DeriveKey(fileKey, new byte[0], "header", 32);
+        var macKey = Hkdf.DeriveKey(fileKey, new byte[0], HeaderInfo, MacKeySize);
         _logger.Value.LogTrace("Derived MAC key length: {MacKeyLength} bytes", macKey.Length);
         _logger.Value.LogTrace("MAC key: {MacKey}", BitConverter.ToString(macKey));
 
@@ -187,15 +192,15 @@ public class Header
     /// <returns>The calculated MAC.</returns>
     public byte[] CalculateMacAndReturn(byte[] fileKey)
     {
-        if (fileKey == null || fileKey.Length != 16)
-            throw new AgeKeyException("File key must be 16 bytes");
+        if (fileKey == null || fileKey.Length != CryptoConstants.FileKeySize)
+            throw new AgeKeyException($"File key must be {CryptoConstants.FileKeySize} bytes");
 
         _logger.Value.LogTrace("Calculating header MAC and returning");
         _logger.Value.LogTrace("File key length: {FileKeyLength} bytes", fileKey.Length);
         _logger.Value.LogTrace("File key: {FileKey}", BitConverter.ToString(fileKey));
 
         // Derive the MAC key using HKDF
-        var macKey = Hkdf.DeriveKey(fileKey, new byte[0], "header", 32);
+        var macKey = Hkdf.DeriveKey(fileKey, new byte[0], HeaderInfo, MacKeySize);
         _logger.Value.LogTrace("Derived MAC key length: {MacKeyLength} bytes", macKey.Length);
         _logger.Value.LogTrace("MAC key: {MacKey}", BitConverter.ToString(macKey));
 
@@ -246,10 +251,10 @@ public class Header
                 if (!string.IsNullOrEmpty(macBase64))
                 {
                     var mac = Base64Utils.DecodeString(macBase64);
-                    // Enforce MAC is 32 bytes (age/rage compatibility)
-                    if (mac.Length != 32)
+                    // Enforce MAC is correct size (age/rage compatibility)
+                    if (mac.Length != MacSize)
                         throw new AgeFormatException(
-                            $"MAC must be 32 bytes (got {mac.Length}) for age/rage compatibility");
+                            $"MAC must be {MacSize} bytes (got {mac.Length}) for age/rage compatibility");
                     header.Mac = mac;
                 }
 
@@ -266,7 +271,7 @@ public class Header
                 var stanzaArgs = parts.Length > 1 ? parts[1] : string.Empty;
 
                 // Skip grease stanzas (added by rage for robustness)
-                if (stanzaType.EndsWith("-grease", StringComparison.Ordinal))
+                if (stanzaType.EndsWith(StanzaTypes.GreaseSuffix, StringComparison.Ordinal))
                 {
                     _logger.Value.LogTrace("Skipping grease stanza of type: {StanzaType}", stanzaType);
 
